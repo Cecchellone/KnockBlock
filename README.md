@@ -60,6 +60,17 @@ Each [release](https://github.com/Cecchellone/KnockBlock/releases) has:
 
 Details are in [`docs/release-notes.md`](docs/release-notes.md). Build them locally with `scripts/build-msi.sh` (needs `wixl` and `msitools`) and `scripts/build-firmware-bundle.sh` (needs ESPHome).
 
+### Trying the PC side without the tray app
+
+`knockctl` (a development tool, built by CI as `knockctl.exe`) runs the same presence loop as the tray app:
+
+```sh
+knockctl.exe -addr knockblock.local -key <api key> agent     # detect mic/camera use and report it until Ctrl-C
+knockctl.exe detect                                            # show what Windows reports about mic/camera use
+```
+
+Options: `-pc NAME` (default: the computer name), `-ignore app.exe,…`, `-no-app-names`, `-debug-mem 30s`.
+
 ### Installing the firmware from the ESPHome dashboard / Home Assistant
 
 No checkout needed: KnockBlock is available as a remote ESPHome package. Create a device in the ESPHome dashboard (or the Home Assistant ESPHome add-on) and use [`firmware/examples/remote-package.yaml`](firmware/examples/remote-package.yaml) as its configuration. It pulls `firmware/knockblock-package.yaml` and the `knockblock_i18n` external component from this repository at `knockblock_ref` (default `main`). Your config only adds Wi-Fi and the API encryption key.

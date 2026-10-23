@@ -75,7 +75,9 @@ These three requirements drive every design decision. If a change conflicts with
   internal/espapi/              # minimal Native API client (transport, noise, framing, messages)
   internal/espapi/pb/           # generated protobuf code (do not edit)
   internal/detect/              # mic/webcam detection (Windows impl + fake for tests)
-  internal/status/              # state machine: inputs -> status ID
+  internal/status/              # state machine: inputs -> status ID, and when to report
+  internal/link/                # persistent connection: reconnect with backoff, presence reports
+  internal/agent/               # presence loop (detect -> status -> link), shared by tray and knockctl agent
   internal/config/              # config load/save, secret protection
   internal/i18n/                # locale loading, language detection, fallback
   internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
