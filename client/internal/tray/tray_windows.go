@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/Cecchellone/KnockBlock/client/internal/autostart"
 	"github.com/Cecchellone/KnockBlock/client/internal/config"
 	"github.com/Cecchellone/KnockBlock/client/internal/detect"
+	"github.com/Cecchellone/KnockBlock/client/internal/endsession"
 	"github.com/Cecchellone/KnockBlock/client/internal/i18n"
 	"github.com/Cecchellone/KnockBlock/client/internal/icon"
 	"github.com/Cecchellone/KnockBlock/client/internal/link"
@@ -82,6 +84,10 @@ func (a *app) onReady() {
 	})
 	go a.uiLoop()
 	go a.menuLoop()
+	if err := endsession.Watch(a.endSession); err != nil {
+		a.log.Warn("cannot watch for updates and sign-out", "err", err)
+	}
+	go a.announceUpdate()
 
 	// First start: nothing is configured yet, so show the settings page
 	// instead of a grey icon the user may not notice.
@@ -313,20 +319,60 @@ func (a *app) checkAlerts() {
 	if !ok || !notifications {
 		return
 	}
-	if err := showNotification(a.t("app.name"), a.t(alert.Key, alert.Args...), false); err != nil {
+	if err := showNotification(a.t("app.name"), a.t(alert.Key, alert.Args...)); err != nil {
 		a.log.Warn("notification not shown", "err", err)
 	}
 }
 
-// doorbell tells the user that someone rang the light's doorbell: a chime
-// and a notification, also during calls (the user asked for it to always
-// ring; it can be turned off in the settings).
+// endSession closes the app when Windows asks: an installer updating it
+// (Restart Manager restarts it afterwards) or the user signing out. The
+// light is told this PC is offline before the app goes.
+func (a *app) endSession(update bool) {
+	a.log.Info("closing at Windows' request", "update", update)
+	if update {
+		if err := showNotification(a.t("app.name"), a.t("notify.updating")); err != nil {
+			a.log.Warn("update notification not shown", "err", err)
+		}
+		time.Sleep(2 * time.Second) // the notification goes with the icon
+	}
+	if a.engine != nil {
+		a.engine.Stop() // reports offline
+	}
+	systray.Quit()
+}
+
+// announceUpdate tells the user once that the app was updated, comparing
+// this version with the one that last ran (%LOCALAPPDATA%\KnockBlock\version).
+func (a *app) announceUpdate() {
+	if a.opts.Version == "" || a.opts.Version == "dev" {
+		return
+	}
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(dir, "KnockBlock", "version")
+	prev, _ := os.ReadFile(path)
+	if string(prev) == a.opts.Version {
+		return
+	}
+	if err := os.WriteFile(path, []byte(a.opts.Version), 0o644); err != nil {
+		a.log.Warn("saving the version", "err", err)
+	}
+	if len(prev) == 0 {
+		return // first run: nothing was updated
+	}
+	time.Sleep(2 * time.Second) // let the icon appear first
+	if err := showNotification(a.t("app.name"), a.t("notify.updated", "version", a.opts.Version)); err != nil {
+		a.log.Warn("update notification not shown", "err", err)
+	}
+}
+
+// doorbell tells the user that someone rang the light's doorbell, with a
+// standard Windows notification (it can be turned off in the settings).
 func (a *app) doorbell() {
 	a.log.Info("doorbell")
-	if err := playChime(); err != nil {
-		a.log.Warn("doorbell sound not played", "err", err)
-	}
-	if err := showNotification(a.t("notify.doorbell_title"), a.t("notify.doorbell"), true); err != nil {
+	if err := showNotification(a.t("notify.doorbell_title"), a.t("notify.doorbell")); err != nil {
 		a.log.Warn("doorbell notification not shown", "err", err)
 	}
 }

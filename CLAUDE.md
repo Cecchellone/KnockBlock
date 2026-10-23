@@ -90,8 +90,8 @@ These three requirements drive every design decision. If a change conflicts with
   internal/icon/                # draws the app/tray icon (door + status light) and encodes .ico; no image files in the repo
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/
-  knockblock.wxs                  # MSI definition (WiX 3 subset, built on Linux with wixl)
-  condition.idt                   # Condition table row wixl cannot express (AUTOSTART=0)
+  knockblock.wxs                  # MSI definition (WiX v5, built on Windows by scripts/build-msi.ps1)
+  en-US.wxl, it-IT.wxl            # installer texts, one file per language
 /docs/
   protocol-notes.md             # what we learned about the Native API, with aioesphomeapi references
   adding-a-language.md          # step-by-step guide
@@ -112,7 +112,7 @@ These three requirements drive every design decision. If a change conflicts with
   - `switch` **`flip_display`** (board) — rotates the picture by 180° (restored across reboots).
   - `number` **`led_brightness`** (board) — default status LED brightness in %, restored; the PC settings' Light tab shows it.
   - Display layout (board): a slightly darker info bar at the top (PC left, app centre, clock or call minutes right; `privacy_mode` hides PC and app) and the localized label below. The clock comes from SNTP (`timezone` substitution).
-  - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a notification with a chime.
+  - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a standard Windows notification.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
 - **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `dnd` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
 - `api:` with `encryption: key: !secret api_encryption_key` and **`reboot_timeout: 0s`** (otherwise the device reboots in a loop when neither the PC nor Home Assistant is connected).
@@ -158,7 +158,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 - Tray icon colour reflects status; tooltip shows localized status and connection state.
 - Menu: current status, override options, "Open settings", "Start with Windows" toggle, "Quit".
-- Notifications: only for things that matter (device unreachable for several minutes), and they can be disabled.
+- Notifications: only for things that matter (device unreachable for several minutes, doorbell, update), always the standard Windows notification with no custom sound; they can be disabled.
 - Settings window (native, in tabs): Connection (host, default `knockblock.local`, port, encryption key, connection test), Light (the device's own settings, read live and written to the device: display language, orientation, display and LED brightness, privacy), This PC (name, language, app names, doorbell, notifications, autostart), Apps (ignore list, app names). It opens by itself on first start. Saving reconnects only when the address or key changes.
 
 ### 5.5 Config and secrets
@@ -171,7 +171,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
 - Embed icon and version info in the executable: `scripts/winres.sh` draws the icon with `internal/icon` and writes `cmd/knockblock/rsrc_windows_amd64.syso` with go-winres (pinned, run via `go run`).
-- Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
+- Installer: an **MSI** (owner's choice over Inno Setup), built with **WiX v5** on Windows by `scripts/build-msi.ps1` from `installer/knockblock.wxs`. Owner's flow: welcome → for everyone (Program Files, default, UAC) or only for me (`%LOCALAPPDATA%\Programs`) → folder → confirm (Install) → progress → finish with "Start KnockBlock" checked. Start menu shortcut; "Start with Windows" on by default (`AUTOSTART=0`). Updates close a running app through Restart Manager (the app handles WM_ENDSESSION in `internal/endsession`, notifies, reports offline, and is restarted). English and Italian, one MSI with embedded language transforms.
 - Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both as a GitHub release on every push to `main` (next patch after the latest `vX.Y.Z` tag; the release creates the tag) and on tags `vX.Y.Z` pushed by hand (new minor/major series).
 
 ## 6. Internationalization
@@ -194,7 +194,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 6.3 Installer and docs
 
-- MSI: no custom UI strings except the downgrade error message (English). Add localized dialogs only if a custom UI is ever needed.
+- MSI: standard WiX dialogs (translated by WiX) plus KnockBlock's strings in `installer/<culture>.wxl`; the Windows display language picks the embedded transform.
 - `README.md` is in English; a translated `README.it.md` is welcome but optional.
 
 ## 7. Milestones

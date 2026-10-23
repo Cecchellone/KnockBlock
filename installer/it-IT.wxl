@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Testi italiani del setup di KnockBlock. Le pagine standard vengono dalle
+     traduzioni di WiX; questi sono quelli di KnockBlock. -->
+<WixLocalization Culture="it-IT" Codepage="1252" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="Language" Value="1040" />
+  <String Id="Description" Value="App di KnockBlock per l'area di notifica: dice alla luce sulla porta quando microfono o webcam sono in uso." />
+  <String Id="DowngradeError" Value="È già installata una versione più recente di KnockBlock." />
+  <String Id="LaunchApp" Value="Avvia KnockBlock" />
+</WixLocalization>

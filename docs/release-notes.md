@@ -2,14 +2,25 @@
 
 ### `KnockBlock-<version>.msi`: Windows tray app
 
-Double-click to install. No administrator rights are needed: the app is
-installed for the current user in `%LOCALAPPDATA%\Programs\KnockBlock`, with a
-Start menu shortcut, and starts with Windows. To install without starting
-with Windows:
+Double-click to install. The setup, in English or Italian like Windows, asks:
 
-```
-msiexec /i KnockBlock-<version>.msi AUTOSTART=0
-```
+- **for everyone** (in `Program Files`, asks for administrator rights; the
+  default) or **only for me** (in `%LOCALAPPDATA%\Programs`, no rights
+  needed);
+- the folder, which you can change;
+- confirmation; at the end, "Start KnockBlock" (checked).
+
+KnockBlock gets a Start menu shortcut and starts with Windows. Installing a
+newer version over an older one (installed the same way) closes the running
+app, tells you it is updating, and starts it again.
+
+Silent installs: `msiexec /i KnockBlock-<version>.msi /qn` (for everyone, as
+administrator); add `ALLUSERS="" MSIINSTALLPERUSER=1` for the current user,
+`APPLICATIONFOLDER="D:\Apps\KnockBlock"` for another folder, `AUTOSTART=0` to
+not start with Windows.
+
+If you installed 0.1.x (always "only for me") and now choose "for everyone",
+uninstall the old one from Settings → Apps.
 
 On first start the app opens its settings window: enter the light's address
 (default `knockblock.local`) and the API encryption key, press **Test
