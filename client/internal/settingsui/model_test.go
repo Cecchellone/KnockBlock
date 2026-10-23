@@ -40,7 +40,7 @@ func newModel(t *testing.T, test func(context.Context, espapi.Options) (TestResu
 func validForm() Form {
 	return Form{
 		Host: " luce.lan ", Port: "6053", Key: validKey,
-		PCName: "STUDIO", Language: "en", DisplayLanguage: "it", DisplayFlip: "on",
+		PCName: "STUDIO", Language: "en",
 		SendApps: true, Doorbell: true, Autostart: true,
 		Ignore: "obs64.exe\n\n nvidia broadcast.exe ", Names: "rec.exe = Recorder\n",
 	}
@@ -56,7 +56,7 @@ func TestLocalizedChoices(t *testing.T) {
 		!containsChoice(langs, Choice{"en", "English"}) {
 		t.Errorf("languages %v", langs)
 	}
-	if o := m.Orientations(); len(o) != 3 || o[2].Value != "on" || !strings.Contains(o[2].Label, "180") {
+	if o := m.Orientations(); len(o) != 2 || o[1].Value != "on" || !strings.Contains(o[1].Label, "180") {
 		t.Errorf("orientations %v", o)
 	}
 	f := m.Form()
@@ -87,8 +87,8 @@ func TestSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	key, _ := cfg.Key()
-	if cfg.Host != "luce.lan" || cfg.PCName != "STUDIO" || cfg.Language != "en" || cfg.DisplayLanguage != "it" ||
-		cfg.DisplayFlip != "on" || !cfg.SendAppNames || cfg.Notifications || !cfg.Doorbell || key != validKey {
+	if cfg.Host != "luce.lan" || cfg.PCName != "STUDIO" || cfg.Language != "en" ||
+		!cfg.SendAppNames || cfg.Notifications || !cfg.Doorbell || key != validKey {
 		t.Errorf("saved %+v (key %q)", cfg, key)
 	}
 	if len(cfg.Ignore) != 2 || cfg.Ignore[1] != "nvidia broadcast.exe" || cfg.AppNames["rec.exe"] != "Recorder" {

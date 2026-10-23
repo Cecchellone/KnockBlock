@@ -46,6 +46,13 @@ type Agent struct {
 	mu       sync.Mutex
 	override status.Override
 	current  status.Result
+	update   *update // applied by Run
+}
+
+type update struct {
+	pc       string
+	sendApps bool
+	det      detect.Detector
 }
 
 // New returns an agent; call Run to start it.
@@ -72,6 +79,22 @@ func (a *Agent) SetOverride(o status.Override) {
 	}
 }
 
+// Update changes the PC name, the app-name setting and the detector while
+// running, on the same connection. Run reports the old PC name offline if
+// it changed, closes the old detector and reports the status again.
+func (a *Agent) Update(pc string, sendApps bool, det detect.Detector) {
+	a.mu.Lock()
+	if a.update != nil && a.update.det != det {
+		a.update.det.Close() // replaced before Run took it
+	}
+	a.update = &update{pc: pc, sendApps: sendApps, det: det}
+	a.mu.Unlock()
+	select {
+	case a.poke <- struct{}{}:
+	default:
+	}
+}
+
 // Current returns the last computed result.
 func (a *Agent) Current() status.Result {
 	a.mu.Lock()
@@ -90,6 +113,20 @@ func (a *Agent) Run(ctx context.Context) {
 	ticker := time.NewTicker(a.cfg.PollInterval)
 	defer ticker.Stop()
 	for {
+		a.mu.Lock()
+		u := a.update
+		a.update = nil
+		a.mu.Unlock()
+		if u != nil {
+			if u.pc != a.cfg.PC {
+				a.sendOffline()
+			}
+			if u.det != a.cfg.Detector {
+				a.cfg.Detector.Close()
+			}
+			a.cfg.PC, a.cfg.SendApps, a.cfg.Detector = u.pc, u.sendApps, u.det
+			reporter = status.Reporter{} // report again with the new settings
+		}
 		if err := a.cfg.Detector.Poll(&snap); err != nil {
 			if !failing {
 				a.log.Warn("detection failed", "err", err)

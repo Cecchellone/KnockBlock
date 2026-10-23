@@ -28,6 +28,7 @@ var (
 	procEnumChildWindows          = user32.NewProc("EnumChildWindows")
 	procGetDC                     = user32.NewProc("GetDC")
 	procGetDpiForWindow           = user32.NewProc("GetDpiForWindow")
+	procGetKeyState               = user32.NewProc("GetKeyState")
 	procGetSysColor               = user32.NewProc("GetSysColor")
 	procGetSysColorBrush          = user32.NewProc("GetSysColorBrush")
 	procGetMessageW               = user32.NewProc("GetMessageW")
@@ -197,7 +198,31 @@ type nonClientMetrics struct {
 	PaddedBorderWidth                      int32
 }
 
+// Tab control, keyboard and visibility.
+const (
+	wsClipSiblings = 0x04000000
+	wmNotify       = 0x004E
+	wmKeyDown      = 0x0100
+	tcmGetCurSel   = 0x130B
+	tcmSetCurSel   = 0x130C
+	tcmInsertItem  = 0x133E
+	tcifText       = 0x1
+	vkTab          = 0x09
+	vkShift        = 0x10
+	vkControl      = 0x11
+	swHide         = 0
+)
+
 type initCommonControlsEx struct{ Size, ICC uint32 }
+
+// tcItem is TCITEMW, for TCM_INSERTITEMW.
+type tcItem struct {
+	Mask, State, StateMask uint32
+	Text                   *uint16
+	TextMax                int32
+	Image                  int32
+	Param                  uintptr
+}
 
 type bitmapInfoHeader struct {
 	Size                         uint32

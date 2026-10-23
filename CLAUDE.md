@@ -159,7 +159,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - Tray icon colour reflects status; tooltip shows localized status and connection state.
 - Menu: current status, override options, "Open settings", "Start with Windows" toggle, "Quit".
 - Notifications: only for things that matter (device unreachable for several minutes), and they can be disabled.
-- Settings window (native): device host (default `knockblock.local`), port, encryption key, language (auto / English / Italian / …), device display language and orientation, doorbell, ignore list, app names, connection test. It opens by itself on first start.
+- Settings window (native, in tabs): Connection (host, default `knockblock.local`, port, encryption key, connection test), Light (the device's own settings, read live and written to the device: display language, orientation, display and LED brightness, privacy), This PC (name, language, app names, doorbell, notifications, autostart), Apps (ignore list, app names). It opens by itself on first start. Saving reconnects only when the address or key changes.
 
 ### 5.5 Config and secrets
 

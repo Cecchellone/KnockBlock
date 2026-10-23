@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"io"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -79,6 +80,19 @@ func (w *Window) Close() {
 	}
 }
 
+// Tabs is the number of tabs.
+const Tabs = 4
+
+// SelectTab shows tab i (0-based) of the open window.
+func (w *Window) SelectTab(i int) {
+	w.mu.Lock()
+	c := w.cur
+	w.mu.Unlock()
+	if c != nil {
+		sendMessage(c.hwnd, wmSelectTab, uintptr(i), 0)
+	}
+}
+
 // Capture writes a PNG screenshot of the open window and returns how many
 // controls it has. The release smoke test uses it to check the window on a
 // real Windows.
@@ -105,10 +119,16 @@ func (w *Window) Capture(out io.Writer) (controls int, err error) {
 const (
 	idSave = idOK
 	idTest = 100
+	idTabs = 101
 )
 
-// wmTestDone tells the window thread that the connection test finished.
-const wmTestDone = wmApp + 1
+// Messages to the window thread: the connection test finished; the light's
+// settings were read (or could not be).
+const (
+	wmTestDone    = wmApp + 1
+	wmDeviceReady = wmApp + 2
+	wmSelectTab   = wmApp + 3
+)
 
 // box is a control's place in 96-DPI client coordinates.
 type box struct{ X, Y, W, H int32 }
@@ -116,35 +136,55 @@ type box struct{ X, Y, W, H int32 }
 type control struct {
 	hwnd windows.HWND
 	box  box
+	page int  // tab showing it; -1 on every tab
+	off  bool // never shown (a setting the light does not have)
 }
 
-// win is one open window. Every field but the test result belongs to the
+// Tabs, in order.
+const (
+	pageConnection = iota
+	pageLight
+	pagePC
+	pageApps
+)
+
+// win is one open window. Every field but the ones under mu belongs to the
 // window thread.
 type win struct {
 	model *Model
 	ready chan error
 	done  chan struct{}
 
-	hwnd  windows.HWND
-	inst  windows.Handle
-	dpi   uint32
-	font  uintptr
-	icons [2]uintptr
-	ctrls []control
+	hwnd     windows.HWND
+	inst     windows.Handle
+	dpi      uint32
+	font     uintptr
+	icons    [2]uintptr
+	ctrls    []control
+	building int // page of the controls being created
+	page     int // page shown
 
+	tabs                                         windows.HWND
 	host, port, key, removeKey, testBtn, result  windows.HWND
-	displayLang, flip, pcName, lang              windows.HWND
+	devStatus, devLang, devFlip, devBacklight    windows.HWND
+	devLED, devPrivacy                           windows.HWND
+	pcName, lang                                 windows.HWND
 	sendApps, doorbell, notifications, autostart windows.HWND
 	ignore, names                                windows.HWND
-	langChoices, displayChoices, flipChoices     []Choice
-	cancelTest                                   context.CancelFunc
+	langChoices, devLangChoices, flipChoices     []Choice
+	backlightChoices, ledChoices                 []Choice
+	cancelTest, cancelDevice                     context.CancelFunc
+	device                                       *Device // nil until read, or if unreachable
 
-	testMu  sync.Mutex
-	testMsg string
+	mu        sync.Mutex
+	testMsg   string
+	devResult *Device
+	devErr    error
+	closed    bool
 }
 
 // Client area size, in 96-DPI units.
-const clientW, clientH = 636, 556
+const clientW, clientH = 520, 432
 
 // A fixed-size window with a title bar, close and minimize buttons, and a
 // taskbar button.
@@ -203,6 +243,15 @@ func (c *win) run() {
 		if int32(r) <= 0 { // WM_QUIT or error
 			return
 		}
+		// Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
+		if m.Message == wmKeyDown && m.WParam == vkTab && keyDown(vkControl) {
+			step := 1
+			if keyDown(vkShift) {
+				step = 3
+			}
+			c.showPage((c.page + step) % Tabs)
+			continue
+		}
 		// Tab, Enter (Save) and Esc (Cancel) as in a dialog box.
 		if r, _, _ := procIsDialogMessageW.Call(uintptr(c.hwnd), uintptr(unsafe.Pointer(&m))); r != 0 {
 			continue
@@ -257,6 +306,7 @@ func (c *win) create() error {
 	c.setIcons()
 	c.build()
 	c.fill(c.model.Form())
+	c.openDevice()
 	c.layout()
 	c.center()
 	procShowWindow.Call(uintptr(c.hwnd), swShow)
@@ -268,92 +318,218 @@ func (c *win) create() error {
 // build creates the controls. Their order is the Tab order.
 func (c *win) build() {
 	t := c.model.T
-	label := func(text string, b box) { c.add("STATIC", text, ssNoPrefix, 0, 0, b) }
+	label := func(text string, b box) windows.HWND { return c.add("STATIC", text, ssNoPrefix, 0, 0, b) }
 	edit := func(style uint32, b box) windows.HWND {
 		return c.add("EDIT", "", wsTabStop|esAutoHScroll|style, wsExClientEdge, 0, b)
 	}
 	combo := func(choices []Choice, b box) windows.HWND {
 		b.H = 240 // height of the open list
 		h := c.add("COMBOBOX", "", wsTabStop|wsVScroll|cbsDropDownList, 0, 0, b)
-		for _, ch := range choices {
-			sendMessage(h, cbAddString, 0, uintptr(unsafe.Pointer(utf16Ptr(ch.Label))))
-		}
+		fillCombo(h, choices)
 		return h
 	}
 	check := func(text string, b box) windows.HWND {
 		return c.add("BUTTON", text, wsTabStop|bsAutoCheckBox|bsMultiline, 0, 0, b)
 	}
-	group := func(text string, b box) { c.add("BUTTON", text, bsGroupBox, 0, 0, b) }
+	const x, iw, cw = 28, 464, 260 // page left edge, full and combo widths
 
-	// The light (left column).
-	const lx, iw = 24, 276
-	group(t("settings.device"), box{12, 12, 300, 314})
-	y := int32(34)
-	label(t("settings.host"), box{lx, y, 188, 16})
-	label(t("settings.port"), box{lx + 196, y, 80, 16})
-	c.host = edit(0, box{lx, y + 18, 188, 23})
+	c.building = -1
+	// Only the strip of tab headers: the pages lie on the window background,
+	// so labels and check boxes match it (the themed tab body is a shade
+	// lighter and would show their rectangles).
+	c.tabs = c.add("SysTabControl32", "", wsTabStop|wsClipSiblings, 0, idTabs, box{12, 12, clientW - 24, 26})
+	for i, key := range []string{"settings.tab_connection", "settings.device", "settings.this_pc", "settings.apps"} {
+		item := tcItem{Mask: tcifText, Text: utf16Ptr(t(key))}
+		sendMessage(c.tabs, tcmInsertItem, uintptr(i), uintptr(unsafe.Pointer(&item)))
+	}
+
+	// Connection.
+	c.building = pageConnection
+	label(t("settings.host"), box{x, 48, 300, 16})
+	label(t("settings.port"), box{x + 316, 48, 80, 16})
+	c.host = edit(0, box{x, 66, 300, 23})
 	sendMessage(c.host, emSetCueBanner, 0, uintptr(unsafe.Pointer(utf16Ptr("knockblock.local"))))
-	c.port = edit(esNumber, box{lx + 196, y + 18, 80, 23})
+	c.port = edit(esNumber, box{x + 316, 66, 80, 23})
 	sendMessage(c.port, emSetLimitText, 5, 0)
-	y += 49
-	label(t("settings.key"), box{lx, y, iw, 16})
-	c.key = edit(esPassword, box{lx, y + 18, iw, 23})
+	label(t("settings.key"), box{x, 99, iw, 16})
+	c.key = edit(esPassword, box{x, 117, iw, 23})
 	if c.model.KeySaved() {
 		sendMessage(c.key, emSetCueBanner, 0, uintptr(unsafe.Pointer(utf16Ptr(t("settings.key_saved")))))
 	}
-	y += 49
-	c.removeKey = check(t("settings.key_remove"), box{lx, y, iw, 20})
+	c.removeKey = check(t("settings.key_remove"), box{x, 150, iw, 20})
 	enableWindow(c.removeKey, c.model.KeySaved())
-	y += 26
-	c.testBtn = c.add("BUTTON", t("settings.test"), wsTabStop|bsPushButton, 0, idTest, box{lx, y, 140, 26})
-	y += 30
-	c.result = c.add("STATIC", "", ssNoPrefix, 0, 0, box{lx, y, iw, 32})
-	y += 36
-	label(t("settings.display_language"), box{lx, y, iw, 16})
-	c.displayChoices = c.model.Languages("settings.display_language_keep")
-	c.displayLang = combo(c.displayChoices, box{lx, y + 18, iw, 23})
-	y += 49
-	label(t("settings.display_flip"), box{lx, y, iw, 16})
-	c.flipChoices = c.model.Orientations()
-	c.flip = combo(c.flipChoices, box{lx, y + 18, iw, 23})
+	c.testBtn = c.add("BUTTON", t("settings.test"), wsTabStop|bsPushButton, 0, idTest, box{x, 180, 160, 26})
+	c.result = label("", box{x, 214, iw, 48})
 
-	// This PC (right column).
-	const rx = 336
-	group(t("settings.this_pc"), box{324, 12, 300, 314})
-	y = 34
-	label(t("settings.pc_name"), box{rx, y, iw, 16})
-	c.pcName = edit(0, box{rx, y + 18, iw, 23})
+	// Light: read from the device when it answers (deviceReady).
+	c.building = pageLight
+	c.devStatus = label(t("settings.device_connecting"), box{x, 48, iw, 36})
+	label(t("settings.display_language"), box{x, 92, iw, 16})
+	c.devLang = combo(nil, box{x, 110, cw, 23})
+	label(t("settings.display_flip"), box{x, 143, iw, 16})
+	c.flipChoices = c.model.Orientations()
+	c.devFlip = combo(c.flipChoices, box{x, 161, cw, 23})
+	label(t("settings.display_brightness"), box{x, 194, iw, 16})
+	c.backlightChoices = c.model.Percentages(true)
+	c.devBacklight = combo(c.backlightChoices, box{x, 212, cw, 23})
+	label(t("settings.led_brightness"), box{x, 245, iw, 16})
+	c.ledChoices = c.model.Percentages(false)
+	c.devLED = combo(c.ledChoices, box{x, 263, cw, 23})
+	c.devPrivacy = check(t("settings.privacy"), box{x, 298, iw, 30})
+	c.enableDevice(false)
+
+	// This PC.
+	c.building = pagePC
+	label(t("settings.pc_name"), box{x, 48, iw, 16})
+	c.pcName = edit(0, box{x, 66, iw, 23})
 	sendMessage(c.pcName, emSetCueBanner, 0, uintptr(unsafe.Pointer(utf16Ptr(c.model.DefaultPCName()))))
 	sendMessage(c.pcName, emSetLimitText, 32, 0)
-	y += 45
-	label(t("settings.pc_name_help", "default", c.model.DefaultPCName()), box{rx, y, iw, 30})
-	y += 36
-	label(t("settings.language"), box{rx, y, iw, 16})
+	label(t("settings.pc_name_help", "default", c.model.DefaultPCName()), box{x, 95, iw, 30})
+	label(t("settings.language"), box{x, 131, iw, 16})
 	c.langChoices = c.model.Languages("settings.language_auto")
-	c.lang = combo(c.langChoices, box{rx, y + 18, iw, 23})
-	y += 51
-	c.sendApps = check(t("settings.send_apps"), box{rx, y, iw, 32})
-	y += 34
-	c.doorbell = check(t("settings.doorbell"), box{rx, y, iw, 32})
-	y += 34
-	c.notifications = check(t("settings.notifications"), box{rx, y, iw, 32})
-	y += 34
-	c.autostart = check(t("settings.autostart"), box{rx, y, iw, 32})
+	c.lang = combo(c.langChoices, box{x, 149, cw, 23})
+	c.sendApps = check(t("settings.send_apps"), box{x, 186, iw, 30})
+	c.doorbell = check(t("settings.doorbell"), box{x, 220, iw, 30})
+	c.notifications = check(t("settings.notifications"), box{x, 254, iw, 30})
+	c.autostart = check(t("settings.autostart"), box{x, 288, iw, 30})
 
-	// Apps (full width).
-	group(t("settings.apps"), box{12, 336, 612, 170})
-	y = 358
-	label(t("settings.ignore"), box{24, y, 288, 16})
-	label(t("settings.names"), box{324, y, 288, 16})
-	multi := wsTabStop | wsVScroll | esMultiline | esAutoVScroll | esWantReturn
-	c.ignore = c.add("EDIT", "", uint32(multi), wsExClientEdge, 0, box{24, y + 18, 288, 72})
-	c.names = c.add("EDIT", "", uint32(multi), wsExClientEdge, 0, box{324, y + 18, 288, 72})
-	label(t("settings.ignore_help"), box{24, y + 94, 288, 46})
-	label(t("settings.names_help"), box{324, y + 94, 288, 46})
+	// Apps.
+	c.building = pageApps
+	multi := uint32(wsTabStop | wsVScroll | esMultiline | esAutoVScroll | esWantReturn)
+	label(t("settings.ignore"), box{x, 48, iw, 16})
+	c.ignore = c.add("EDIT", "", multi, wsExClientEdge, 0, box{x, 66, iw, 76})
+	label(t("settings.ignore_help"), box{x, 146, iw, 32})
+	label(t("settings.names"), box{x, 186, iw, 16})
+	c.names = c.add("EDIT", "", multi, wsExClientEdge, 0, box{x, 204, iw, 76})
+	label(t("settings.names_help"), box{x, 284, iw, 32})
 
 	// Buttons.
-	c.add("BUTTON", t("settings.save"), wsTabStop|bsDefPushButton, 0, idSave, box{clientW - 12 - 208, 518, 100, 26})
-	c.add("BUTTON", t("settings.cancel"), wsTabStop|bsPushButton, 0, idCancel, box{clientW - 12 - 100, 518, 100, 26})
+	c.building = -1
+	c.add("BUTTON", t("settings.save"), wsTabStop|bsDefPushButton, 0, idSave, box{clientW - 12 - 208, 394, 100, 26})
+	c.add("BUTTON", t("settings.cancel"), wsTabStop|bsPushButton, 0, idCancel, box{clientW - 12 - 100, 394, 100, 26})
+	c.showPage(pageConnection)
+}
+
+func fillCombo(h windows.HWND, choices []Choice) {
+	for _, ch := range choices {
+		sendMessage(h, cbAddString, 0, uintptr(unsafe.Pointer(utf16Ptr(ch.Label))))
+	}
+}
+
+// showPage shows the controls of one tab and hides the others.
+func (c *win) showPage(p int) {
+	c.page = p
+	sendMessage(c.tabs, tcmSetCurSel, uintptr(p), 0)
+	for _, ct := range c.ctrls {
+		if ct.page < 0 {
+			continue
+		}
+		show := uintptr(swHide)
+		if ct.page == p && !ct.off {
+			show = swShow
+		}
+		procShowWindow.Call(uintptr(ct.hwnd), show)
+	}
+}
+
+// enableDevice enables the Light tab's settings once they are read.
+func (c *win) enableDevice(on bool) {
+	for _, h := range []windows.HWND{c.devLang, c.devFlip, c.devBacklight, c.devLED, c.devPrivacy} {
+		enableWindow(h, on)
+	}
+}
+
+// hide removes a control for good (with its label, the control before it).
+func (c *win) hide(h windows.HWND, withLabel bool) {
+	for i := range c.ctrls {
+		if c.ctrls[i].hwnd == h {
+			c.ctrls[i].off = true
+			if withLabel && i > 0 {
+				c.ctrls[i-1].off = true
+			}
+		}
+	}
+}
+
+// openDevice reads the light's settings on another goroutine.
+func (c *win) openDevice() {
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancelDevice = cancel
+	hwnd := c.hwnd
+	go func() {
+		d, err := c.model.OpenDevice(ctx)
+		c.mu.Lock()
+		if c.closed { // the window is gone: nobody will take it
+			c.mu.Unlock()
+			if d != nil {
+				d.Close()
+			}
+			return
+		}
+		c.devResult, c.devErr = d, err
+		c.mu.Unlock()
+		postMessage(hwnd, wmDeviceReady, 0, 0)
+	}()
+}
+
+// deviceReady shows the light's settings, or why they are missing.
+func (c *win) deviceReady() {
+	c.mu.Lock()
+	d, err := c.devResult, c.devErr
+	c.devResult = nil
+	c.mu.Unlock()
+	if err != nil {
+		setText(c.devStatus, c.model.T("settings.device_unreachable"))
+		return
+	}
+	c.device = d
+	s := d.Settings()
+	setText(c.devStatus, c.model.T("settings.device_ready", "device", d.Name))
+	c.devLangChoices = c.model.DisplayLanguages(s.Languages)
+	fillCombo(c.devLang, c.devLangChoices)
+	selectChoice(c.devLang, c.devLangChoices, s.Language)
+	flip := "off"
+	if s.Flip {
+		flip = "on"
+	}
+	selectChoice(c.devFlip, c.flipChoices, flip)
+	selectChoice(c.devBacklight, c.backlightChoices, strconv.Itoa(NearestPercent(s.Backlight, true)))
+	selectChoice(c.devLED, c.ledChoices, strconv.Itoa(NearestPercent(s.LED, false)))
+	setCheck(c.devPrivacy, s.Privacy)
+	c.enableDevice(true)
+	if len(s.Languages) == 0 {
+		c.hide(c.devLang, true)
+	}
+	if !s.HasFlip {
+		c.hide(c.devFlip, true)
+	}
+	if !s.HasBacklight {
+		c.hide(c.devBacklight, true)
+	}
+	if !s.HasLED {
+		c.hide(c.devLED, true)
+	}
+	if !s.HasPrivacy {
+		c.hide(c.devPrivacy, false)
+	}
+	c.showPage(c.page)
+}
+
+// deviceForm is the Light tab as DeviceSettings.
+func (c *win) deviceForm() DeviceSettings {
+	s := c.device.Settings()
+	if v := chosen(c.devLang, c.devLangChoices); v != "" {
+		s.Language = v
+	}
+	s.Flip = chosen(c.devFlip, c.flipChoices) == "on"
+	s.Privacy = isChecked(c.devPrivacy)
+	if v, err := strconv.Atoi(chosen(c.devBacklight, c.backlightChoices)); err == nil && v != NearestPercent(s.Backlight, true) {
+		s.Backlight = v // untouched entries keep the exact value read
+	}
+	if v, err := strconv.Atoi(chosen(c.devLED, c.ledChoices)); err == nil && v != NearestPercent(s.LED, false) {
+		s.LED = v
+	}
+	return s
 }
 
 // add creates a child control; layout places it.
@@ -363,7 +539,7 @@ func (c *win) add(class, text string, style, exStyle uint32, id int, b box) wind
 		uintptr(style|wsChild|wsVisible), 0, 0, 0, 0, uintptr(c.hwnd), uintptr(id), uintptr(c.inst), 0)
 	hw := windows.HWND(h)
 	sendMessage(hw, wmSetFont, c.font, 0)
-	c.ctrls = append(c.ctrls, control{hw, b})
+	c.ctrls = append(c.ctrls, control{hwnd: hw, box: b, page: c.building})
 	return hw
 }
 
@@ -426,8 +602,6 @@ func (c *win) fill(f Form) {
 	setText(c.ignore, strings.ReplaceAll(f.Ignore, "\n", "\r\n"))
 	setText(c.names, strings.ReplaceAll(f.Names, "\n", "\r\n"))
 	selectChoice(c.lang, c.langChoices, f.Language)
-	selectChoice(c.displayLang, c.displayChoices, f.DisplayLanguage)
-	selectChoice(c.flip, c.flipChoices, f.DisplayFlip)
 	setCheck(c.sendApps, f.SendApps)
 	setCheck(c.doorbell, f.Doorbell)
 	setCheck(c.notifications, f.Notifications)
@@ -437,11 +611,9 @@ func (c *win) fill(f Form) {
 func (c *win) form() Form {
 	return Form{
 		Host: getText(c.host), Port: getText(c.port), Key: getText(c.key), RemoveKey: isChecked(c.removeKey),
-		PCName:          getText(c.pcName),
-		Language:        chosen(c.lang, c.langChoices),
-		DisplayLanguage: chosen(c.displayLang, c.displayChoices),
-		DisplayFlip:     chosen(c.flip, c.flipChoices),
-		SendApps:        isChecked(c.sendApps), Doorbell: isChecked(c.doorbell),
+		PCName:   getText(c.pcName),
+		Language: chosen(c.lang, c.langChoices),
+		SendApps: isChecked(c.sendApps), Doorbell: isChecked(c.doorbell),
 		Notifications: isChecked(c.notifications), Autostart: isChecked(c.autostart),
 		Ignore: strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
 		Names:  strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
@@ -478,19 +650,28 @@ func isChecked(h windows.HWND) bool { return sendMessage(h, bmGetCheck, 0, 0) ==
 
 func (c *win) save() {
 	err := c.model.Save(c.form())
-	if err == nil {
-		procDestroyWindow.Call(uintptr(c.hwnd))
+	if err != nil {
+		c.message(c.model.SaveError(err))
+		var fe *FieldError
+		if errors.As(err, &fe) {
+			field := map[Field]windows.HWND{FieldHost: c.host, FieldPort: c.port, FieldKey: c.key, FieldNames: c.names}[fe.Field]
+			page := map[Field]int{FieldHost: pageConnection, FieldPort: pageConnection, FieldKey: pageConnection, FieldNames: pageApps}[fe.Field]
+			if field != 0 {
+				c.showPage(page)
+				procSetFocus.Call(uintptr(field))
+				sendMessage(field, emSetSel, 0, ^uintptr(0))
+			}
+		}
 		return
 	}
-	c.message(c.model.SaveError(err))
-	var fe *FieldError
-	if errors.As(err, &fe) {
-		field := map[Field]windows.HWND{FieldHost: c.host, FieldPort: c.port, FieldKey: c.key, FieldNames: c.names}[fe.Field]
-		if field != 0 {
-			procSetFocus.Call(uintptr(field))
-			sendMessage(field, emSetSel, 0, ^uintptr(0))
+	if c.device != nil {
+		if err := c.device.Apply(context.Background(), c.deviceForm()); err != nil {
+			c.message(c.model.DeviceError(err))
+			c.showPage(pageLight)
+			return
 		}
 	}
+	procDestroyWindow.Call(uintptr(c.hwnd))
 }
 
 func (c *win) message(text string) {
@@ -509,17 +690,17 @@ func (c *win) startTest() {
 	hwnd := c.hwnd
 	go func() {
 		_, msg := c.model.Test(ctx, f)
-		c.testMu.Lock()
+		c.mu.Lock()
 		c.testMsg = msg
-		c.testMu.Unlock()
+		c.mu.Unlock()
 		postMessage(hwnd, wmTestDone, 0, 0)
 	}()
 }
 
 func (c *win) testDone() {
-	c.testMu.Lock()
+	c.mu.Lock()
 	msg := c.testMsg
-	c.testMu.Unlock()
+	c.mu.Unlock()
 	setText(c.result, msg)
 	enableWindow(c.testBtn, true)
 }
@@ -547,6 +728,21 @@ func (c *win) destroyed() {
 	if c.cancelTest != nil {
 		c.cancelTest()
 	}
+	if c.cancelDevice != nil {
+		c.cancelDevice()
+	}
+	if c.device != nil {
+		c.device.Close()
+	}
+	// A light read that arrived but was not shown yet is closed here; one
+	// still in progress closes itself.
+	c.mu.Lock()
+	c.closed = true
+	if c.devResult != nil {
+		c.devResult.Close()
+		c.devResult = nil
+	}
+	c.mu.Unlock()
 	if c.font != 0 {
 		procDeleteObject.Call(c.font)
 	}
@@ -588,6 +784,19 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 		case wmTestDone:
 			c.testDone()
 			return 0
+		case wmDeviceReady:
+			c.deviceReady()
+			return 0
+		case wmSelectTab:
+			c.showPage(int(wParam) % Tabs)
+			return 0
+		case wmNotify:
+			// Only the tab control sends notifications here; the selection
+			// is read back instead of decoding the NMHDR.
+			if sel := int(int32(sendMessage(c.tabs, tcmGetCurSel, 0, 0))); sel >= 0 && sel != c.page {
+				c.showPage(sel)
+			}
+			return 0
 		case wmDpiChanged:
 			c.dpiChanged(uint32(wParam & 0xffff))
 			return 0
@@ -601,6 +810,11 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 	}
 	r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), m, wParam, lParam)
 	return r
+}
+
+func keyDown(vk uintptr) bool {
+	r, _, _ := procGetKeyState.Call(vk)
+	return int16(r) < 0
 }
 
 // windowBrush is the system brush of the window background colour (not to

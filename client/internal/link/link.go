@@ -193,43 +193,6 @@ func (s *Supervisor) connect(ctx context.Context) (Conn, espapi.Entity, espapi.E
 	return conn, action, ents, nil
 }
 
-// SetDisplayLanguage returns an OnConnect hook that sets the device's
-// display_language select, when lang is not empty and the device offers it.
-func SetDisplayLanguage(lang string) func(context.Context, Conn, espapi.Entities) error {
-	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
-		if lang == "" {
-			return nil
-		}
-		sel, ok := ents.Find(espapi.KindSelect, "display_language")
-		if !ok {
-			return nil
-		}
-		for _, o := range sel.Options {
-			if o == lang {
-				return c.SetSelect(ctx, sel.Key, lang)
-			}
-		}
-		return fmt.Errorf("link: device has no display language %q (has %v)", lang, sel.Options)
-	}
-}
-
-// SetDisplayFlip returns an OnConnect hook that sets the device's
-// flip_display switch: "on" turns the picture upside down, "off" turns it
-// back, "" leaves the device as it is. Devices without the switch (no
-// display) are left alone.
-func SetDisplayFlip(mode string) func(context.Context, Conn, espapi.Entities) error {
-	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
-		if mode != "on" && mode != "off" {
-			return nil
-		}
-		sw, ok := ents.Find(espapi.KindSwitch, "flip_display")
-		if !ok {
-			return nil
-		}
-		return c.SetSwitch(ctx, sw.Key, mode == "on")
-	}
-}
-
 // WatchDoorbell returns an OnConnect hook that calls ring, from the
 // connection's reader goroutine, every time the device's doorbell event
 // fires. ring must not block. Devices without the event are left alone.
@@ -244,20 +207,6 @@ func WatchDoorbell(ring func()) func(context.Context, Conn, espapi.Entities) err
 				ring()
 			}
 		})
-	}
-}
-
-// Hooks combines OnConnect hooks; they run in order and every one runs even
-// if an earlier one fails. The errors are joined.
-func Hooks(hooks ...func(context.Context, Conn, espapi.Entities) error) func(context.Context, Conn, espapi.Entities) error {
-	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
-		var errs []error
-		for _, h := range hooks {
-			if h != nil {
-				errs = append(errs, h(ctx, c, ents))
-			}
-		}
-		return errors.Join(errs...)
 	}
 }
 

@@ -44,7 +44,10 @@ type Deps struct {
 	Hostname        string // default PC name
 	Autostart       Autostart
 	// Test connects to a device with the given options. Default: espapi.
-	Test       func(ctx context.Context, opts espapi.Options) (TestResult, error)
+	Test func(ctx context.Context, opts espapi.Options) (TestResult, error)
+	// Dial connects to the light for its settings (the Light tab).
+	// Default: espapi.
+	Dial       func(ctx context.Context, opts espapi.Options) (DeviceConn, error)
 	Logger     *slog.Logger
 	ClientInfo string
 }
@@ -55,6 +58,9 @@ func (d *Deps) defaults() {
 	}
 	if d.Test == nil {
 		d.Test = espapiTest
+	}
+	if d.Dial == nil {
+		d.Dial = espapiDial
 	}
 	if d.SystemLanguages == nil {
 		d.SystemLanguages = func() []string { return nil }
@@ -70,11 +76,10 @@ type Form struct {
 	Key       string
 	RemoveKey bool
 	PCName    string
-	// Language and DisplayLanguage are language codes, "" for automatic /
-	// leave unchanged. DisplayFlip is "", "off" or "on".
-	Language, DisplayLanguage, DisplayFlip string
-	SendApps, Doorbell, Notifications      bool
-	Autostart                              bool
+	// Language is the app's language code, "" to follow Windows.
+	Language                          string
+	SendApps, Doorbell, Notifications bool
+	Autostart                         bool
 	// Ignore and Names hold one entry per line ("exe = name" for Names).
 	Ignore, Names string
 }
@@ -154,7 +159,7 @@ func (m *Model) Form() Form {
 	}
 	return Form{
 		Host: cfg.Host, Port: strconv.Itoa(cfg.Port),
-		PCName: cfg.PCName, Language: cfg.Language, DisplayLanguage: cfg.DisplayLanguage, DisplayFlip: cfg.DisplayFlip,
+		PCName: cfg.PCName, Language: cfg.Language,
 		SendApps: cfg.SendAppNames, Doorbell: cfg.Doorbell, Notifications: cfg.Notifications,
 		Autostart: m.deps.Autostart.Enabled(),
 		Ignore:    strings.Join(cfg.Ignore, "\n"), Names: strings.Join(names, "\n"),
@@ -176,10 +181,10 @@ func (m *Model) Languages(firstKey string) []Choice {
 	return out
 }
 
-// Orientations lists the display orientation choices.
+// Orientations lists the display orientation choices: "off" (normal) and
+// "on" (upside down).
 func (m *Model) Orientations() []Choice {
 	return []Choice{
-		{"", m.T("settings.display_language_keep")},
 		{"off", m.T("settings.display_flip_off")},
 		{"on", m.T("settings.display_flip_on")},
 	}
@@ -214,11 +219,6 @@ func (m *Model) apply(f Form) (config.Config, error) {
 	cfg.KeyPlain = ""
 	cfg.PCName = strings.TrimSpace(f.PCName)
 	cfg.Language = m.knownLanguage(f.Language)
-	cfg.DisplayLanguage = m.knownLanguage(f.DisplayLanguage)
-	cfg.DisplayFlip = ""
-	if f.DisplayFlip == "on" || f.DisplayFlip == "off" {
-		cfg.DisplayFlip = f.DisplayFlip
-	}
 	cfg.SendAppNames, cfg.Doorbell, cfg.Notifications = f.SendApps, f.Doorbell, f.Notifications
 	cfg.Ignore = nil
 	for _, line := range strings.Split(f.Ignore, "\n") {
