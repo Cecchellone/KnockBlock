@@ -10,6 +10,7 @@ name: Release
 # Files:
 #   - knockblock-<version>.esphomebundle.tar.gz  firmware config bundle
 #   - KnockBlock-<version>.msi                   Windows installer
+#   - knockctl-<version>.exe                     command-line tool
 on:
   push:
     branches: [main]
@@ -111,10 +112,20 @@ jobs:
       - name: Build MSI
         run: scripts/build-msi.sh "${{ needs.version.outputs.version }}"
 
+      - name: Build knockctl
+        # The command-line tool for trying the light (README); a console
+        # program, so no -H=windowsgui.
+        working-directory: client
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+            -o "../dist/knockctl-${{ needs.version.outputs.version }}.exe" ./cmd/knockctl
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/KnockBlock-*.msi
+          path: |
+            dist/KnockBlock-*.msi
+            dist/knockctl-*.exe
           if-no-files-found: error
 
   installer-smoke-test:
@@ -229,8 +240,8 @@ jobs:
       - name: Check the files to publish
         run: |
           ls -l dist
-          test "$(ls dist | wc -l)" -eq 2
-          ls dist/KnockBlock-*.msi dist/knockblock-*.esphomebundle.tar.gz
+          test "$(ls dist | wc -l)" -eq 3
+          ls dist/KnockBlock-*.msi dist/knockctl-*.exe dist/knockblock-*.esphomebundle.tar.gz
 
       - name: Create release
         env:
