@@ -110,7 +110,7 @@ These three requirements drive every design decision. If a change conflicts with
   - `button` **`heartbeat`** — keeps the manual source alive.
   - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
   - `switch` **`flip_display`** (board) — rotates the picture by 180° (restored across reboots).
-  - `number` **`led_brightness`** (board) — default status LED brightness in %, restored; the PC settings' Light tab shows it.
+  - `number` **`led_brightness`** (board) — default status LED brightness in %, restored; the PC settings' Device tab shows it.
   - Display layout (board): a slightly darker info bar at the top (PC left, app centre, clock or call minutes right; `privacy_mode` hides PC and app) and the localized label below. The clock comes from SNTP (`timezone` substitution).
   - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a standard Windows notification.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
@@ -160,7 +160,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - Menu: current status, override options, "Open settings", "Start with Windows" toggle, "Quit".
 - Notifications: only for things that matter (device unreachable for several minutes, doorbell, update), always the standard Windows notification and Windows' own sound, never a custom one. A setting picks the mode: none, text only (default), sound only, text and sound.
 - Double-clicking the tray icon opens the settings; a single click opens the menu.
-- Settings window (native, in tabs): Connection (host, default `knockblock.local`, port, encryption key, connection test), Light (the device's own settings, read live and written to the device: display language, orientation, display and LED brightness as sliders shown on the light while dragged and put back if the window closes without saving, privacy), This PC (name, language, app names, doorbell, notification mode, autostart), Apps (ignore list, app names). It opens by itself on first start. Saving reconnects only when the address or key changes.
+- Settings window (native, in tabs): Connection (host, default `knockblock.local`, port, encryption key, connection test), Device (the light's own settings, read live and written to the device: display language, orientation, display and LED brightness as sliders shown on the light while dragged and put back if the window closes without saving, privacy), This PC (name, language, app names, doorbell, notification mode, autostart), Apps (ignore list, app names). It opens by itself on first start. Saving reconnects only when the address or key changes.
 
 ### 5.5 Config and secrets
 

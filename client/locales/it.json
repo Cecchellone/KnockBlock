@@ -30,7 +30,7 @@
   "notify.updated": "KnockBlock è stato aggiornato alla versione {version}.",
   "lang.name": "Italiano",
   "settings.title": "Impostazioni di KnockBlock",
-  "settings.device": "Luce",
+  "settings.device": "Dispositivo",
   "settings.host": "Indirizzo",
   "settings.port": "Porta",
   "settings.key": "Chiave di cifratura",

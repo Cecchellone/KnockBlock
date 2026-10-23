@@ -52,8 +52,8 @@ changes per minor version.
   only while it is really recording. Discord no longer shows as using the
   microphone when it is just open, and an entry left by an old version of
   an app no longer counts. `knockctl detect` lists the audio sessions.
-- The settings window has tabs: Connection, Light, This PC, Apps. The
-  Light tab reads the light's own settings (display language, orientation,
+- The settings window has tabs: Connection, Device, This PC, Apps. The
+  Device tab reads the light's own settings (display language, orientation,
   display brightness, LED brightness, privacy) and saves them on the light.
 - Saving the settings no longer drops the connection unless the address or
   the key changed.

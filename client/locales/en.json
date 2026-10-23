@@ -30,7 +30,7 @@
   "notify.updated": "KnockBlock was updated to version {version}.",
   "lang.name": "English",
   "settings.title": "KnockBlock settings",
-  "settings.device": "Light",
+  "settings.device": "Device",
   "settings.host": "Address",
   "settings.port": "Port",
   "settings.key": "Encryption key",
