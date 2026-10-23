@@ -235,9 +235,10 @@ type pageData struct {
 	PCName, DefaultPC       string
 	Language                string
 	DisplayLanguage         string
+	DisplayFlip             string
 	Languages               []language
 	SendApps, Notifications bool
-	Autostart               bool
+	Doorbell, Autostart     bool
 	Ignore, Names           string
 	Message, Error          string
 	Minutes                 string // for the "t" function, which takes strings
@@ -259,9 +260,10 @@ func (s *Server) pageData(cfg config.Config, token string) pageData {
 	return pageData{
 		Token: token, Host: cfg.Host, Port: cfg.Port, KeySaved: cfg.KeyProtected != "",
 		PCName: cfg.PCName, DefaultPC: s.deps.Hostname,
-		Language: cfg.Language, DisplayLanguage: cfg.DisplayLanguage, Languages: langs,
-		SendApps: cfg.SendAppNames, Notifications: cfg.Notifications, Autostart: s.deps.Autostart.Enabled(),
-		Ignore: strings.Join(cfg.Ignore, "\n"), Names: strings.Join(names, "\n"),
+		Language: cfg.Language, DisplayLanguage: cfg.DisplayLanguage, DisplayFlip: cfg.DisplayFlip, Languages: langs,
+		SendApps: cfg.SendAppNames, Notifications: cfg.Notifications, Doorbell: cfg.Doorbell,
+		Autostart: s.deps.Autostart.Enabled(),
+		Ignore:    strings.Join(cfg.Ignore, "\n"), Names: strings.Join(names, "\n"),
 		Minutes: strconv.Itoa(max(1, int(s.deps.IdleTimeout/time.Minute))),
 	}
 }
@@ -317,6 +319,13 @@ func (s *Server) parseForm(r *http.Request, cur config.Config) (config.Config, e
 	cfg.DisplayLanguage = s.knownLanguage(r.PostFormValue("display_language"))
 	cfg.SendAppNames = r.PostFormValue("send_apps") != ""
 	cfg.Notifications = r.PostFormValue("notifications") != ""
+	cfg.Doorbell = r.PostFormValue("doorbell") != ""
+	switch flip := r.PostFormValue("display_flip"); flip {
+	case "on", "off":
+		cfg.DisplayFlip = flip
+	default:
+		cfg.DisplayFlip = ""
+	}
 	cfg.Ignore = nil
 	for _, line := range strings.Split(r.PostFormValue("ignore"), "\n") {
 		if line = strings.TrimSpace(line); line != "" {

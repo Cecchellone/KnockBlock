@@ -76,6 +76,7 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 - The **menu** shows the status and the connection. You can force "Free" or "Do not disturb" ("Automatic" goes back to detection), open the settings, toggle "Start with Windows", or quit.
 - **Settings…** opens a small page in your browser (served on `127.0.0.1` only while it is open, behind a random per-session link; it closes itself after 3 minutes without use). It has the device host and port, the encryption key, the app and display languages, the PC name, whether to send app names, ignored apps, custom app names, notifications and "Start with Windows", plus a **Test connection** button. Everything is in your language (English or Italian; English is the fallback).
 - The settings are stored in `%APPDATA%\KnockBlock\config.json`; the encryption key is encrypted with Windows DPAPI and never shown again once saved. The app reloads the file as soon as it changes. If you edit the file by hand, you can put the key in plain text as `"key": "…"`: the app encrypts it on the next start and removes the plain copy.
+- **Doorbell**: when someone presses the light's button, every PC running KnockBlock plays a chime and shows "Someone is at your door", also during calls (turn it off in the settings). The light shows a bell for a few seconds.
 - **Logs** go to `%LOCALAPPDATA%\KnockBlock\logs\knockblock.log`. Run `knockblock.exe -debug -debug-mem 30s` to log details and memory use.
 
 ### Trying the PC side without the tray app
@@ -85,9 +86,16 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 ```sh
 knockctl.exe -addr knockblock.local -key <api key> agent     # detect mic/camera use and report it until Ctrl-C
 knockctl.exe detect                                            # show what Windows reports about mic/camera use
+knockctl.exe -addr knockblock.local -key <api key> ring       # ring the doorbell, as if the button were pressed
+knockctl.exe -addr knockblock.local -key <api key> flip on    # turn the light's display upside down (off: back)
 ```
 
 Options: `-pc NAME` (default: the computer name), `-ignore app.exe,…`, `-no-app-names`, `-debug-mem 30s`.
+
+### Doorbell button and display orientation
+
+- The doorbell is the board's **BOOT** button. To use an external push button instead, wire it between a free GPIO and GND and set `doorbell_pin` in your device config's `substitutions:` (e.g. `doorbell_pin: GPIO4`). Home Assistant sees a `Doorbell` event (device class `doorbell`) and a `Ring doorbell` button.
+- If the light hangs the other way round, turn on the **Flip display** switch (Home Assistant), or choose "Upside down" in the PC app's settings. The device remembers it.
 
 ### Installing the firmware from the ESPHome dashboard / Home Assistant
 

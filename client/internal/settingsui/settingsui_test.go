@@ -67,7 +67,7 @@ func validForm() url.Values {
 	return url.Values{
 		"host": {"luce.lan"}, "port": {"6053"}, "key": {validKey},
 		"pc_name": {"STUDIO"}, "language": {"en"}, "display_language": {"it"},
-		"send_apps": {"1"}, "autostart": {"1"},
+		"send_apps": {"1"}, "autostart": {"1"}, "doorbell": {"1"}, "display_flip": {"on"},
 		"ignore": {"obs64.exe\n\n nvidia broadcast.exe "}, "names": {"rec.exe = Recorder\n"},
 	}
 }
@@ -126,7 +126,7 @@ func TestSave(t *testing.T) {
 	}
 	key, _ := cfg.Key()
 	if cfg.Host != "luce.lan" || cfg.PCName != "STUDIO" || cfg.Language != "en" || cfg.DisplayLanguage != "it" ||
-		!cfg.SendAppNames || cfg.Notifications || key != validKey {
+		!cfg.SendAppNames || cfg.Notifications || !cfg.Doorbell || cfg.DisplayFlip != "on" || key != validKey {
 		t.Errorf("saved %+v (key %q)", cfg, key)
 	}
 	if len(cfg.Ignore) != 2 || cfg.Ignore[1] != "nvidia broadcast.exe" || cfg.AppNames["rec.exe"] != "Recorder" {

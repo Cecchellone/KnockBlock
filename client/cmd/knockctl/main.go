@@ -56,7 +56,7 @@ func run() error {
 	interval := flag.Duration("interval", time.Second, "agent: detection poll interval")
 	fakeDetect := flag.String("fake-detect", "", "agent: read apps in use from this file instead of the registry (lines: mic|camera <exe or package>)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|report <pc> <status> [app]|detect|agent\n\nflags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|ring|flip on|off|report <pc> <status> [app]|detect|agent\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -138,6 +138,21 @@ func run() error {
 			return errors.New("device has no heartbeat button")
 		}
 		return conn.PressButton(cmdCtx, e.Key)
+	case "ring":
+		e, ok := ents.Find(espapi.KindButton, "ring_doorbell")
+		if !ok {
+			return errors.New("device has no ring_doorbell button (firmware too old)")
+		}
+		return conn.PressButton(cmdCtx, e.Key)
+	case "flip":
+		if len(args) != 2 || (args[1] != "on" && args[1] != "off") {
+			return errors.New("usage: knockctl flip on|off")
+		}
+		e, ok := ents.Find(espapi.KindSwitch, "flip_display")
+		if !ok {
+			return errors.New("device has no flip_display switch")
+		}
+		return conn.SetSwitch(cmdCtx, e.Key, args[1] == "on")
 	case "report":
 		if len(args) < 3 || len(args) > 4 {
 			return errors.New("usage: knockctl report <pc> <status> [app]")

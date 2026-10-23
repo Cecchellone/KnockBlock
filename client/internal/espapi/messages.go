@@ -27,10 +27,15 @@ var handledMessages = []proto.Message{
 	(*pb.ListEntitiesButtonResponse)(nil),
 	(*pb.ListEntitiesTextSensorResponse)(nil),
 	(*pb.ListEntitiesServicesResponse)(nil),
+	(*pb.ListEntitiesSwitchResponse)(nil),
+	(*pb.ListEntitiesEventResponse)(nil),
 	(*pb.SubscribeStatesRequest)(nil),
 	(*pb.SelectStateResponse)(nil),
 	(*pb.TextSensorStateResponse)(nil),
+	(*pb.SwitchStateResponse)(nil),
+	(*pb.EventResponse)(nil),
 	(*pb.SelectCommandRequest)(nil),
+	(*pb.SwitchCommandRequest)(nil),
 	(*pb.ButtonCommandRequest)(nil),
 	(*pb.ExecuteServiceRequest)(nil),
 }
@@ -78,6 +83,9 @@ const (
 	// KindAction is a user-defined API action (`api: actions:`), called
 	// with ExecuteAction. Its ObjectID is the action name.
 	KindAction
+	KindSwitch
+	// KindEvent fires events (e.g. a doorbell ring); it has no state.
+	KindEvent
 )
 
 func (k EntityKind) String() string {
@@ -90,6 +98,10 @@ func (k EntityKind) String() string {
 		return "text_sensor"
 	case KindAction:
 		return "action"
+	case KindSwitch:
+		return "switch"
+	case KindEvent:
+		return "event"
 	default:
 		return fmt.Sprintf("EntityKind(%d)", int(k))
 	}
@@ -102,7 +114,7 @@ type Entity struct {
 	Key      uint32
 	ObjectID string
 	Name     string
-	Options  []string    // select options
+	Options  []string    // select options; event types for events
 	Args     []ActionArg // action arguments, in call order
 }
 
@@ -125,9 +137,12 @@ func (e Entities) Find(kind EntityKind, objectID string) (Entity, bool) {
 	return Entity{}, false
 }
 
-// State is a state update for a select or text sensor entity.
+// State is a state update for a select, text sensor or switch entity, or
+// an event that fired.
 type State struct {
-	Key   uint32
+	Key uint32
+	// Value is the option or text, "on" or "off" for a switch, and the event
+	// type for an event.
 	Value string
 	// Missing is true when the entity has no valid state yet.
 	Missing bool
@@ -143,6 +158,10 @@ func entityFromMessage(m proto.Message) (Entity, bool) {
 		e = Entity{Kind: KindButton, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
 	case *pb.ListEntitiesTextSensorResponse:
 		e = Entity{Kind: KindTextSensor, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
+	case *pb.ListEntitiesSwitchResponse:
+		e = Entity{Kind: KindSwitch, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
+	case *pb.ListEntitiesEventResponse:
+		e = Entity{Kind: KindEvent, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName(), Options: r.GetEventTypes()}
 	case *pb.ListEntitiesServicesResponse:
 		e = Entity{Kind: KindAction, Key: r.GetKey(), ObjectID: r.GetName(), Name: r.GetName()}
 		for _, a := range r.GetArgs() {

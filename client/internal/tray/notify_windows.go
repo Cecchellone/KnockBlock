@@ -22,6 +22,11 @@ const (
 	nimModify     = 0x1
 	nifInfo       = 0x10
 	niifInfo      = 0x1
+	niifNoSound   = 0x10
+
+	sndAsync     = 0x1
+	sndNoDefault = 0x2
+	sndMemory    = 0x4
 )
 
 var (
@@ -29,6 +34,11 @@ var (
 	shell32           = windows.NewLazySystemDLL("shell32.dll")
 	procGetClassNameW = user32.NewProc("GetClassNameW")
 	procShellNotify   = shell32.NewProc("Shell_NotifyIconW")
+	procPlaySound     = windows.NewLazySystemDLL("winmm.dll").NewProc("PlaySoundW")
+
+	// chime stays allocated once played: PlaySound reads it asynchronously.
+	chimeOnce sync.Once
+	chime     []byte
 
 	findOnce  sync.Once
 	findCB    uintptr
@@ -81,8 +91,9 @@ func trayWindow() (windows.HWND, error) {
 	return foundHwnd, nil
 }
 
-// showNotification shows a notification on the tray icon.
-func showNotification(title, body string) error {
+// showNotification shows a notification on the tray icon. A silent one
+// plays no sound of its own.
+func showNotification(title, body string, silent bool) error {
 	hwnd, err := trayWindow()
 	if err != nil {
 		return err
@@ -93,10 +104,22 @@ func showNotification(title, body string) error {
 		Flags:     nifInfo,
 		InfoFlags: niifInfo,
 	}
+	if silent {
+		nid.InfoFlags |= niifNoSound
+	}
 	nid.Size = uint32(unsafe.Sizeof(nid))
 	copyUTF16(nid.InfoTitle[:], title)
 	copyUTF16(nid.Info[:], body)
 	if r, _, err := procShellNotify.Call(nimModify, uintptr(unsafe.Pointer(&nid))); r == 0 {
+		return err
+	}
+	return nil
+}
+
+// playChime plays the doorbell sound without waiting for it to end.
+func playChime() error {
+	chimeOnce.Do(func() { chime = Chime() })
+	if r, _, err := procPlaySound.Call(uintptr(unsafe.Pointer(&chime[0])), 0, sndMemory|sndAsync|sndNoDefault); r == 0 {
 		return err
 	}
 	return nil

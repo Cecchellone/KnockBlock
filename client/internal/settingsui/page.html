@@ -71,6 +71,12 @@
         <option value="">{{t "settings.display_language_keep"}}</option>
         {{range .Languages}}<option value="{{.Code}}"{{if eq .Code $.DisplayLanguage}} selected{{end}}>{{.Name}}</option>{{end}}
       </select>
+      <label for="display_flip">{{t "settings.display_flip"}}</label>
+      <select id="display_flip" name="display_flip">
+        <option value="">{{t "settings.display_language_keep"}}</option>
+        <option value="off"{{if eq .DisplayFlip "off"}} selected{{end}}>{{t "settings.display_flip_off"}}</option>
+        <option value="on"{{if eq .DisplayFlip "on"}} selected{{end}}>{{t "settings.display_flip_on"}}</option>
+      </select>
     </section>
 
     <section>
@@ -84,6 +90,7 @@
         {{range .Languages}}<option value="{{.Code}}"{{if eq .Code $.Language}} selected{{end}}>{{.Name}}</option>{{end}}
       </select>
       <label class="check"><input type="checkbox" name="send_apps" value="1"{{if .SendApps}} checked{{end}}> {{t "settings.send_apps"}}</label>
+      <label class="check"><input type="checkbox" name="doorbell" value="1"{{if .Doorbell}} checked{{end}}> {{t "settings.doorbell"}}</label>
       <label class="check"><input type="checkbox" name="notifications" value="1"{{if .Notifications}} checked{{end}}> {{t "settings.notifications"}}</label>
       <label class="check"><input type="checkbox" name="autostart" value="1"{{if .Autostart}} checked{{end}}> {{t "settings.autostart"}}</label>
     </section>

@@ -16,6 +16,20 @@ changes per minor version.
 - Every merge into `main` publishes a GitHub release with the MSI and the
   firmware bundle, as the next patch version.
 
+### Light (firmware)
+
+- Doorbell: the board's BOOT button (or any GPIO, `doorbell_pin`) and the
+  `Ring doorbell` button fire a `doorbell` event. The display shows a bell
+  and the LED blinks white. Rings closer than 3 s count as one.
+- `Flip display` switch turns the picture upside down; kept across reboots.
+
+### PC app (Windows)
+
+- The doorbell rings on every connected PC: a chime and a notification,
+  also during calls. It can be turned off in the settings.
+- Settings for the light's display orientation and for the doorbell.
+- `knockctl ring` and `knockctl flip on|off` for trying them out.
+
 ## [0.1.0]
 
 First release.

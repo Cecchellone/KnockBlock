@@ -20,6 +20,7 @@ type Deps struct {
 	Dial        func(espapi.Options) link.DialFunc
 	OnResult    func(status.Result) // must not block
 	OnState     func(link.State)    // must not block
+	OnDoorbell  func()              // the light's doorbell rang; must not block
 	Logger      *slog.Logger
 	ClientInfo  string
 }
@@ -69,10 +70,14 @@ func (e *Engine) Start(cfg config.Config) error {
 		return err
 	}
 	sup := link.New(link.Options{
-		Dial:      e.deps.Dial(espapi.Options{Address: cfg.Address(), EncryptionKey: key, ClientInfo: e.deps.ClientInfo, Logger: e.deps.Logger}),
-		OnState:   e.deps.OnState,
-		OnConnect: link.SetDisplayLanguage(cfg.DisplayLanguage),
-		Logger:    e.deps.Logger,
+		Dial:    e.deps.Dial(espapi.Options{Address: cfg.Address(), EncryptionKey: key, ClientInfo: e.deps.ClientInfo, Logger: e.deps.Logger}),
+		OnState: e.deps.OnState,
+		OnConnect: link.Hooks(
+			link.SetDisplayLanguage(cfg.DisplayLanguage),
+			link.SetDisplayFlip(cfg.DisplayFlip),
+			e.watchDoorbell(cfg),
+		),
+		Logger: e.deps.Logger,
 	})
 	a := agent.New(agent.Config{
 		PC: pc, SendApps: cfg.SendAppNames, Detector: det, Link: sup,
@@ -91,6 +96,14 @@ func (e *Engine) Start(cfg config.Config) error {
 	e.run = r
 	e.deps.Logger.Info("engine started", "device", cfg.Address(), "pc", pc)
 	return nil
+}
+
+// watchDoorbell forwards doorbell rings to OnDoorbell, when enabled.
+func (e *Engine) watchDoorbell(cfg config.Config) func(context.Context, link.Conn, espapi.Entities) error {
+	if !cfg.Doorbell || e.deps.OnDoorbell == nil {
+		return nil
+	}
+	return link.WatchDoorbell(e.deps.OnDoorbell)
 }
 
 // Stop stops the loop: the agent first, so its offline report still goes

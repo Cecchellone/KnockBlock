@@ -47,8 +47,9 @@ func agentCmd(ctx context.Context, log *slog.Logger, dial espapi.Options, f agen
 	defer det.Close()
 
 	sup := link.New(link.Options{
-		Dial:   link.DialESPHome(dial),
-		Logger: log,
+		Dial:      link.DialESPHome(dial),
+		Logger:    log,
+		OnConnect: link.WatchDoorbell(func() { log.Info("doorbell rang") }),
 		OnState: func(s link.State) {
 			switch {
 			case s.Connected:

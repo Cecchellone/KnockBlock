@@ -249,3 +249,59 @@ func TestIntegrationPresence(t *testing.T) {
 	send("PC-STUDIO", "offline", "")
 	expect("offline", "", "", 5*time.Second)
 }
+
+// The doorbell event reaches subscribed clients once per ring, presses
+// within the cooldown count once, and the flip switch round-trips.
+func TestIntegrationDoorbellAndFlip(t *testing.T) {
+	c, ents := integrationConn(t)
+	ring, ok := ents.Find(KindButton, "ring_doorbell")
+	doorbell, ok2 := ents.Find(KindEvent, "doorbell")
+	flip, ok3 := ents.Find(KindSwitch, "flip_display")
+	if !ok || !ok2 || !ok3 {
+		t.Fatalf("missing ring_doorbell/doorbell/flip_display in %+v", ents)
+	}
+	var mu sync.Mutex
+	rings := 0
+	states := &stateTracker{values: map[uint32]string{}}
+	ctx := context.Background()
+	must(t, c.SubscribeStates(ctx, func(st State) {
+		if st.Key == doorbell.Key {
+			mu.Lock()
+			rings++
+			mu.Unlock()
+			return
+		}
+		states.set(st)
+	}))
+	count := func() int { mu.Lock(); defer mu.Unlock(); return rings }
+
+	// No event is replayed on subscription.
+	states.waitFor(t, flip.Key, "off", 5*time.Second)
+	if n := count(); n != 0 {
+		t.Fatalf("%d rings before any press", n)
+	}
+	must(t, c.PressButton(ctx, ring.Key))
+	must(t, c.PressButton(ctx, ring.Key)) // within the 3 s cooldown
+	deadline := time.Now().Add(5 * time.Second)
+	for count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if n := count(); n != 1 {
+		t.Fatalf("%d rings for two quick presses, want 1", n)
+	}
+	time.Sleep(3 * time.Second)
+	must(t, c.PressButton(ctx, ring.Key))
+	deadline = time.Now().Add(5 * time.Second)
+	for count() < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := count(); n != 2 {
+		t.Fatalf("%d rings after the cooldown, want 2", n)
+	}
+
+	must(t, c.SetSwitch(ctx, flip.Key, true))
+	states.waitFor(t, flip.Key, "on", 5*time.Second)
+	must(t, c.SetSwitch(ctx, flip.Key, false))
+	states.waitFor(t, flip.Key, "off", 5*time.Second)
+}

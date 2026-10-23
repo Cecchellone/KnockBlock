@@ -5,17 +5,23 @@
 #
 # The including file must also load the knockblock_i18n and
 # knockblock_presence external components (from this repository's
-# firmware/components, locally or from GitHub) and define a script with id
-# `apply_status` that shows the current status (LED and display on the
-# board, a log line on the host). It runs after every change of `status` or
-# `display_language`, once `status_label`, `active_app` and `active_pc` hold
-# the new values.
+# firmware/components, locally or from GitHub) and define two scripts:
+# - `apply_status` shows the current status (LED and display on the board, a
+#   log line on the host). It runs after every change of `status` or
+#   `display_language`, once `status_label`, `active_app` and `active_pc`
+#   hold the new values.
+# - `show_doorbell` shows that the doorbell rang (display and LED on the
+#   board, a log line on the host). The `doorbell` event has already been
+#   sent to the PC apps and Home Assistant when it runs.
 
 substitutions:
   # A source (a PC, or the manual source) that sends nothing for this long
   # is dropped, so the light does not stay on "call" after a PC shuts down
   # (CLAUDE.md §4). With no source left the status is `offline`.
   watchdog_timeout: 120s
+  # Rings closer together than this count as one, so a held or bouncing
+  # button does not flood the PCs with notifications.
+  doorbell_cooldown_ms: "3000"
 
 knockblock_i18n:
   id: labels
@@ -32,6 +38,11 @@ knockblock_presence:
   timeout: ${watchdog_timeout}
 
 logger:
+
+globals:
+  - id: last_ring_ms
+    type: uint32_t
+    initial_value: "0"
 
 api:
   actions:
@@ -86,6 +97,23 @@ button:
     on_press:
       - lambda: 'id(presence).refresh(StringRef());'
 
+  # Rings the doorbell like the physical button (Home Assistant, tests).
+  - platform: template
+    id: ring_doorbell_button
+    name: Ring doorbell
+    icon: mdi:bell-ring
+    on_press:
+      - script.execute: ring_doorbell
+
+event:
+  # Fired on every ring. The PC apps show a notification; Home Assistant
+  # can use it in automations.
+  - platform: template
+    id: doorbell
+    name: Doorbell
+    device_class: doorbell
+    event_types: [ring]
+
 text_sensor:
   # The text shown on the display, in the display language.
   - platform: template
@@ -119,3 +147,20 @@ script:
             return id(labels).get(id(display_language).current_option(),
                                   id(status).current_option());
       - script.execute: apply_status
+
+  # The board's button and the `Ring doorbell` button both end up here.
+  - id: ring_doorbell
+    then:
+      - if:
+          condition:
+            lambda: |-
+              const uint32_t now = millis();
+              if (id(last_ring_ms) != 0 && now - id(last_ring_ms) < ${doorbell_cooldown_ms})
+                return false;
+              id(last_ring_ms) = now == 0 ? 1 : now;
+              return true;
+          then:
+            - event.trigger:
+                id: doorbell
+                event_type: ring
+            - script.execute: show_doorbell

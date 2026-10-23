@@ -252,8 +252,8 @@ func (c *Conn) Err() error {
 	}
 }
 
-// ListEntities returns the select, button, text sensor and action entities
-// of the device. Other entity types are skipped.
+// ListEntities returns the select, button, text sensor, switch, event and
+// action entities of the device. Other entity types are skipped.
 func (c *Conn) ListEntities(ctx context.Context) (Entities, error) {
 	l := &listing{done: make(chan struct{})}
 	c.mu.Lock()
@@ -285,9 +285,10 @@ func (c *Conn) ListEntities(ctx context.Context) (Entities, error) {
 }
 
 // SubscribeStates asks the device to send the state of every entity now and
-// on every change. fn is called from the reader goroutine for select and
-// text sensor states, also when another client (Home Assistant) changes
-// them; it must not block.
+// on every change. fn is called from the reader goroutine for select, text
+// sensor and switch states, also when another client (Home Assistant)
+// changes them, and for every event that fires; it must not block. Events
+// are not repeated on subscription: only new ones are delivered.
 func (c *Conn) SubscribeStates(ctx context.Context, fn func(State)) error {
 	c.mu.Lock()
 	c.onState = fn
@@ -298,6 +299,11 @@ func (c *Conn) SubscribeStates(ctx context.Context, fn func(State)) error {
 // SetSelect sets a select entity to option.
 func (c *Conn) SetSelect(ctx context.Context, key uint32, option string) error {
 	return c.send(ctx, &pb.SelectCommandRequest{Key: key, State: option})
+}
+
+// SetSwitch turns a switch entity on or off.
+func (c *Conn) SetSwitch(ctx context.Context, key uint32, on bool) error {
+	return c.send(ctx, &pb.SwitchCommandRequest{Key: key, State: on})
 }
 
 // PressButton presses a button entity.
@@ -443,6 +449,14 @@ func (c *Conn) handle(msg proto.Message) {
 		c.emit(State{Key: m.GetKey(), Value: m.GetState(), Missing: m.GetMissingState()})
 	case *pb.TextSensorStateResponse:
 		c.emit(State{Key: m.GetKey(), Value: m.GetState(), Missing: m.GetMissingState()})
+	case *pb.SwitchStateResponse:
+		v := "off"
+		if m.GetState() {
+			v = "on"
+		}
+		c.emit(State{Key: m.GetKey(), Value: v, Missing: m.GetMissingState()})
+	case *pb.EventResponse:
+		c.emit(State{Key: m.GetKey(), Value: m.GetEventType()})
 	default:
 		if e, ok := entityFromMessage(msg); ok {
 			c.mu.Lock()

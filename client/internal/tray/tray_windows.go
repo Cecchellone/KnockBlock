@@ -71,6 +71,7 @@ func (a *app) onReady() {
 		Dial:        link.DialESPHome,
 		OnResult:    func(r status.Result) { a.update(func(s *Snapshot) { s.Result = r }) },
 		OnState:     func(st link.State) { a.update(func(s *Snapshot) { s.Link = st }) },
+		OnDoorbell:  func() { go a.doorbell() },
 		Logger:      a.log,
 		ClientInfo:  "KnockBlock " + a.opts.Version,
 	})
@@ -312,8 +313,21 @@ func (a *app) checkAlerts() {
 	if !ok || !notifications {
 		return
 	}
-	if err := showNotification(a.t("app.name"), a.t(alert.Key, alert.Args...)); err != nil {
+	if err := showNotification(a.t("app.name"), a.t(alert.Key, alert.Args...), false); err != nil {
 		a.log.Warn("notification not shown", "err", err)
+	}
+}
+
+// doorbell tells the user that someone rang the light's doorbell: a chime
+// and a notification, also during calls (the user asked for it to always
+// ring; it can be turned off in the settings).
+func (a *app) doorbell() {
+	a.log.Info("doorbell")
+	if err := playChime(); err != nil {
+		a.log.Warn("doorbell sound not played", "err", err)
+	}
+	if err := showNotification(a.t("notify.doorbell_title"), a.t("notify.doorbell"), true); err != nil {
+		a.log.Warn("doorbell notification not shown", "err", err)
 	}
 }
 

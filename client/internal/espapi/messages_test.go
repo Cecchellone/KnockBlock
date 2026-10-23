@@ -41,6 +41,8 @@ func TestKnownMessageIDs(t *testing.T) {
 		{(*pb.ListEntitiesSelectResponse)(nil), 52},
 		{(*pb.SelectCommandRequest)(nil), 54},
 		{(*pb.ButtonCommandRequest)(nil), 62},
+		{(*pb.SwitchCommandRequest)(nil), 33},
+		{(*pb.EventResponse)(nil), 108},
 	}
 	for _, tt := range tests {
 		if got := messageID(tt.msg); got != tt.want {

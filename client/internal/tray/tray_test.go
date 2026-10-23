@@ -2,6 +2,7 @@ package tray
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -112,6 +113,7 @@ type engineConn struct {
 	mu      sync.Mutex
 	reports []string
 	selects []string
+	onState func(espapi.State)
 	done    chan struct{}
 }
 
@@ -119,7 +121,26 @@ func (c *engineConn) ListEntities(context.Context) (espapi.Entities, error) {
 	return espapi.Entities{
 		{Kind: espapi.KindAction, ObjectID: "report_presence", Key: 1},
 		{Kind: espapi.KindSelect, ObjectID: "display_language", Key: 2, Options: []string{"en", "it"}},
+		{Kind: espapi.KindEvent, ObjectID: "doorbell", Key: 3, Options: []string{"ring"}},
 	}, nil
+}
+
+func (c *engineConn) SetSwitch(context.Context, uint32, bool) error { return nil }
+
+func (c *engineConn) SubscribeStates(_ context.Context, fn func(espapi.State)) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onState = fn
+	return nil
+}
+
+func (c *engineConn) ring() {
+	c.mu.Lock()
+	fn := c.onState
+	c.mu.Unlock()
+	if fn != nil {
+		fn(espapi.State{Key: 3, Value: "ring"})
+	}
 }
 
 func (c *engineConn) ExecuteAction(_ context.Context, _ espapi.Entity, v map[string]string) error {
@@ -153,6 +174,7 @@ func TestEngine(t *testing.T) {
 	conn := &engineConn{done: make(chan struct{})}
 	var dialed []espapi.Options
 	var mu sync.Mutex
+	var rings int
 	apps := filepath.Join(t.TempDir(), "apps.txt")
 	os.WriteFile(apps, []byte("mic Discord.exe\n"), 0o644)
 	e := NewEngine(Deps{
@@ -163,6 +185,7 @@ func TestEngine(t *testing.T) {
 			mu.Unlock()
 			return func(context.Context) (link.Conn, error) { return conn, nil }
 		},
+		OnDoorbell: func() { mu.Lock(); rings++; mu.Unlock() },
 		ClientInfo: "test",
 	})
 	cfg := config.Default()
@@ -187,6 +210,12 @@ func TestEngine(t *testing.T) {
 		}
 	}
 	waitFor("DESK mic Disco")
+	conn.ring()
+	mu.Lock()
+	if rings != 1 {
+		t.Errorf("%d doorbell rings, want 1", rings)
+	}
+	mu.Unlock()
 	mu.Lock()
 	if dialed[0].Address != "light.lan:6053" || dialed[0].EncryptionKey != "k" || dialed[0].ClientInfo != "test" {
 		t.Errorf("dial options %+v", dialed[0])
@@ -222,5 +251,25 @@ func TestEngine(t *testing.T) {
 	e.Stop()
 	if conn.last() != "LAPTOP offline " {
 		t.Errorf("stop did not report offline: %q", conn.last())
+	}
+}
+
+func TestChime(t *testing.T) {
+	w := Chime()
+	if string(w[0:4]) != "RIFF" || string(w[8:16]) != "WAVEfmt " || string(w[36:40]) != "data" {
+		t.Fatalf("bad header % x", w[:44])
+	}
+	if got := binary.LittleEndian.Uint32(w[40:]); int(got) != len(w)-44 {
+		t.Fatalf("data size %d, file has %d", got, len(w)-44)
+	}
+	if len(w) > 24<<10 {
+		t.Errorf("chime is %d bytes", len(w))
+	}
+	lo, hi := byte(255), byte(0)
+	for _, b := range w[44:] {
+		lo, hi = min(lo, b), max(hi, b)
+	}
+	if lo < 10 || hi > 245 || hi-lo < 100 {
+		t.Errorf("samples in [%d, %d]: clipped or silent", lo, hi)
 	}
 }
