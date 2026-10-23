@@ -79,8 +79,13 @@ session rule: **in use = a capture session in the Active state**.
   and unmuted for Windows. Discord saves its mute and deafen buttons in its
   localStorage (`MediaEngineStore`: `{"default":{..."mute":true,"deaf":false...}}`),
   stored by Chromium as LevelDB in `%APPDATA%\discord\Local Storage\leveldb`.
-  KnockBlock reads the newest value there (the last one in the `.log` file,
-  else in a `.ldb` table) while Discord records. Undocumented: if a Discord
+  KnockBlock reads the newest value there while Discord records: the
+  records appended to the current `.log` file, parsed as LevelDB writes
+  them. Discord writes a lot and LevelDB starts a new log every few
+  minutes; when the current log holds no value, the newest one comes from
+  the `.ldb` tables (Snappy-compressed), chosen by sequence number. The
+  first version searched the files as text and could read an outdated
+  value left in an older table, so the light stuck on a stale state. Undocumented: if a Discord
   update changes it, the mute is unknown and the microphone counts as on.
   The official alternative, Discord's local RPC API, needs every user to
   register a Discord application, so it is not used. `knockctl detect live` prints, every second,

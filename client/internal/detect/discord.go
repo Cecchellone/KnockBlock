@@ -2,6 +2,7 @@ package detect
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,25 +25,33 @@ type appMutes interface {
 // in the "MediaEngineStore" entry of its localStorage, which Chromium stores
 // as a LevelDB database under %APPDATA%\discord\Local Storage\leveldb. The
 // value is JSON: {"default":{...,"mute":true,"deaf":false,...},...}.
-// LevelDB appends every write to the current .log file, so the last
-// occurrence there is the newest; after a compaction the entry may only be
-// in a .ldb table (readable when its block is not compressed).
+//
+// Every write goes to LevelDB's current .log file, so pressing mute or
+// unmute always appends a new value there. The log is read as LevelDB
+// writes it (32 KiB blocks of records holding write batches), only the part
+// appended since the last read. Discord writes a lot, and LevelDB starts a
+// new log every few minutes, moving older values into .ldb tables
+// (Snappy-compressed). When the current log holds no value, the newest one
+// is taken from the tables by its sequence number (leveldb.go): an older
+// table can still hold an outdated value, which made the light stick on a
+// stale mute state when tables were searched as plain text.
 //
 // This is undocumented and may break with a Discord update; then the mute
 // is unknown and the microphone counts as on (docs/detection-notes.md).
-// Files are read only when they change, in fixed-size chunks.
 type discordMutes struct {
 	appData string // %APPDATA%
 	now     func() time.Time
 	cache   map[string]*discordState // by Discord flavour directory
-	buf     []byte
+	block   [logBlockSize]byte
+	record  []byte // a record being reassembled from fragments, reused
 }
 
 type discordState struct {
 	checked time.Time // last look at the files
-	file    string    // file the value came from
-	size    int64
-	mod     time.Time
+	file    string    // log read so far
+	offset  int64     // where the next record starts in file
+	inLog   bool      // file held a value
+	tables  bool      // the tables were read for file
 	muted   bool
 	known   bool
 }
@@ -54,15 +63,13 @@ var discordDirs = map[string]string{
 	"discordcanary.exe": "discordcanary",
 }
 
-// discordRecheck limits how often the files are listed; a poll in between
+// discordRecheck limits how often the log is looked at; a poll in between
 // reuses the last answer.
 const discordRecheck = time.Second
 
-var discordKey = []byte("MediaEngineStore")
-
-// discordChunk is the read size; an entry is far smaller than the overlap
-// kept between chunks.
-const discordChunk, discordTail = 64 << 10, 8 << 10
+// discordKey is the localStorage key as Chromium writes it: origin, a NUL,
+// the 8-bit encoding marker, the key name.
+var discordKey = []byte("_https://discord.com\x00\x01MediaEngineStore")
 
 func newDiscordMutes(appData string) *discordMutes {
 	return &discordMutes{appData: appData, now: time.Now, cache: map[string]*discordState{}}
@@ -87,108 +94,205 @@ func (d *discordMutes) muted(exe string) (bool, bool) {
 	return st.muted, st.known
 }
 
-// refresh reads the newest MediaEngineStore value if its file changed.
+// refresh reads what was appended to the current log since the last look.
 func (d *discordMutes) refresh(dbDir string, st *discordState) {
 	entries, err := os.ReadDir(dbDir)
 	if err != nil {
-		st.known = false
-		return
+		return // keep the last value
 	}
-	// Newest first: the .log files, then the tables, by file number
-	// (LevelDB names files with increasing numbers).
-	var logs, tables []string
+	var logs []string
 	for _, e := range entries {
-		switch name := e.Name(); {
-		case strings.HasSuffix(name, ".log"):
-			logs = append(logs, name)
-		case strings.HasSuffix(name, ".ldb"):
-			tables = append(tables, name)
+		if strings.HasSuffix(e.Name(), ".log") {
+			logs = append(logs, e.Name())
 		}
 	}
-	slices.Sort(logs)
-	slices.Sort(tables)
-	slices.Reverse(logs)
-	slices.Reverse(tables)
-	for _, name := range append(logs, tables...) {
-		path := filepath.Join(dbDir, name)
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if path == st.file && info.Size() == st.size && info.ModTime().Equal(st.mod) {
-			return // unchanged: the cached value stands
-		}
-		// A .log file only grows: read just what was appended since the
-		// value was found (with some overlap). Without a newer value there
-		// the cached one stands.
-		var from int64
-		if path == st.file && strings.HasSuffix(path, ".log") && info.Size() > st.size {
-			from = max(0, st.size-discordTail)
-		}
-		muted, ok := d.scan(path, from)
-		if !ok && from > 0 {
-			st.size, st.mod = info.Size(), info.ModTime()
-			return
-		}
-		if !ok {
-			continue
-		}
-		st.file, st.size, st.mod = path, info.Size(), info.ModTime()
-		st.muted, st.known = muted, true
+	if len(logs) == 0 {
 		return
 	}
-	st.known = false
+	// LevelDB numbers its files in increasing order: the highest is the
+	// current log.
+	path := filepath.Join(dbDir, slices.Max(logs))
+	if path != st.file {
+		st.file, st.offset, st.inLog, st.tables = path, 0, false, false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if info.Size() < st.offset {
+		st.offset, st.inLog, st.tables = 0, false, false // rewritten: start over
+	}
+	if info.Size() > st.offset {
+		st.offset = d.readLog(path, st.offset, st)
+	}
+	if !st.inLog && !st.tables {
+		st.tables = true
+		d.fromTables(dbDir, st)
+	}
 }
 
-// scan returns the mute state from the last MediaEngineStore value in a
-// file, read from offset from.
-func (d *discordMutes) scan(path string, from int64) (muted, ok bool) {
+// fromTables takes the newest value from the .ldb tables, once per log
+// that has none yet.
+func (d *discordMutes) fromTables(dbDir string, st *discordState) {
+	tables, _ := filepath.Glob(filepath.Join(dbDir, "*.ldb"))
+	var best []byte
+	var bestSeq uint64
+	for _, t := range tables {
+		v, seq, found, err := tableLookup(t, discordKey)
+		if err == nil && found && (best == nil || seq > bestSeq) {
+			best, bestSeq = v, seq
+		}
+	}
+	if best == nil {
+		return
+	}
+	if mute, deaf, ok := parseMediaEngine(best); ok {
+		st.muted, st.known = mute || deaf, true
+	}
+}
+
+// LevelDB log format (leveldb/doc/log_format.md): 32 KiB blocks; each
+// record has a 7-byte header (CRC32C, length, type) and may be split into
+// FIRST, MIDDLE and LAST fragments across blocks. A block's last 6 bytes or
+// fewer are padding.
+const (
+	logBlockSize  = 32 << 10
+	logHeaderSize = 7
+
+	recFull   = 1
+	recFirst  = 2
+	recMiddle = 3
+	recLast   = 4
+)
+
+// readLog reads the records from offset (a record boundary) to the end and
+// returns where the next unread record starts. Each complete record is a
+// write batch, whose MediaEngineStore values update st in order.
+func (d *discordMutes) readLog(path string, offset int64, st *discordState) int64 {
 	f, err := os.Open(path)
 	if err != nil {
-		return false, false
+		return offset
 	}
 	defer f.Close()
-	if from > 0 {
-		if _, err := f.Seek(from, io.SeekStart); err != nil {
-			return false, false
-		}
-	}
-	if cap(d.buf) < discordChunk+discordTail {
-		d.buf = make([]byte, 0, discordChunk+discordTail)
-	}
-	buf := d.buf[:0]
+	blockStart := offset - offset%logBlockSize
+	pos := int(offset - blockStart) // within the block
+	next := offset                  // after the last complete record
+	d.record = d.record[:0]
+	inRecord := false
 	for {
-		n, err := io.ReadFull(f, buf[len(buf):cap(buf)])
-		buf = buf[:len(buf)+n]
-		// The last complete value in this window wins over earlier ones.
-		for i := 0; ; {
-			j := bytes.Index(buf[i:], discordKey)
-			if j < 0 {
-				break
+		n, err := f.ReadAt(d.block[:], blockStart)
+		if n == 0 {
+			return next
+		}
+		b := d.block[:n]
+		for pos+logHeaderSize <= len(b) {
+			length := int(binary.LittleEndian.Uint16(b[pos+4:]))
+			typ := b[pos+6]
+			if typ == 0 && length == 0 {
+				break // zero padding: the rest of the block is unused
 			}
-			i += j + len(discordKey)
-			if m, deaf, found := parseMediaEngine(buf[i:]); found {
-				muted, ok = m || deaf, true
+			end := pos + logHeaderSize + length
+			if end > len(b) {
+				return next // a record still being written
+			}
+			data := b[pos+logHeaderSize : end]
+			pos = end
+			switch typ {
+			case recFull:
+				d.batch(data, st)
+				inRecord = false
+				next = blockStart + int64(pos)
+			case recFirst:
+				d.record = append(d.record[:0], data...)
+				inRecord = true
+			case recMiddle:
+				if inRecord {
+					d.record = append(d.record, data...)
+				}
+			case recLast:
+				if inRecord {
+					d.batch(append(d.record, data...), st)
+				}
+				inRecord = false
+				next = blockStart + int64(pos)
 			}
 		}
-		if err != nil { // io.EOF or io.ErrUnexpectedEOF: done
-			return muted, ok
+		if n < logBlockSize || err == io.EOF {
+			return next
 		}
-		// Keep the tail: a value may cross the chunk boundary.
-		keep := min(discordTail, len(buf))
-		copy(buf, buf[len(buf)-keep:])
-		buf = buf[:keep]
+		blockStart += logBlockSize
+		pos = 0
 	}
 }
 
-// parseMediaEngine reads "mute" and "deaf" of the "default" context from the
-// bytes after the key: a length, a one-byte encoding marker, then the JSON.
-func parseMediaEngine(b []byte) (mute, deaf, found bool) {
-	start := bytes.Index(b[:min(len(b), 16)], []byte(`{"default":{`))
-	if start < 0 {
+// batch applies the MediaEngineStore values of a LevelDB write batch:
+// sequence (8 bytes), count (4), then for each entry a tag (1 = put,
+// 0 = delete), the key and, for a put, the value, both length-prefixed with
+// a varint.
+func (d *discordMutes) batch(b []byte, st *discordState) {
+	if len(b) < 12 {
+		return
+	}
+	b = b[12:]
+	for len(b) > 0 {
+		tag := b[0]
+		b = b[1:]
+		key, rest, ok := lengthPrefixed(b)
+		if !ok {
+			return
+		}
+		b = rest
+		if tag != 1 {
+			continue // a delete has no value
+		}
+		value, rest, ok := lengthPrefixed(b)
+		if !ok {
+			return
+		}
+		b = rest
+		if !bytes.Equal(key, discordKey) {
+			continue
+		}
+		if mute, deaf, found := parseMediaEngine(value); found {
+			st.muted, st.known, st.inLog = mute || deaf, true, true
+		}
+	}
+}
+
+func lengthPrefixed(b []byte) (field, rest []byte, ok bool) {
+	n, k := binary.Uvarint(b)
+	if k <= 0 || uint64(len(b)-k) < n {
+		return nil, nil, false
+	}
+	return b[k : k+int(n)], b[k+int(n):], true
+}
+
+// parseMediaEngine reads "mute" and "deaf" of the "default" context from a
+// MediaEngineStore value: an encoding marker (1: 8-bit, 0: UTF-16LE), then
+// the JSON.
+func parseMediaEngine(v []byte) (mute, deaf, found bool) {
+	if len(v) == 0 {
 		return false, false, false
 	}
-	b = b[start+len(`{"default":{`):]
+	b := v[1:]
+	if v[0] == 0 {
+		// UTF-16LE: the JSON syntax and the names searched are ASCII, so
+		// the low bytes are enough.
+		ascii := make([]byte, 0, len(b)/2)
+		for i := 0; i+1 < len(b); i += 2 {
+			if b[i+1] == 0 {
+				ascii = append(ascii, b[i])
+			} else {
+				ascii = append(ascii, '?')
+			}
+		}
+		b = ascii
+	}
+	const open = `{"default":{`
+	if !bytes.HasPrefix(b, []byte(open)) {
+		return false, false, false
+	}
+	b = b[len(open):]
 	// The "default" object ends at its closing brace; settings of other
 	// contexts come after it.
 	depth, end := 1, -1
@@ -211,7 +315,7 @@ func parseMediaEngine(b []byte) (mute, deaf, found bool) {
 	return mute, deaf, okMute && okDeaf
 }
 
-// jsonBool finds `name` followed by true or false in a flat JSON object.
+// jsonBool finds `name` followed by true or false in a JSON object.
 func jsonBool(b []byte, name string) (value, ok bool) {
 	i := bytes.Index(b, []byte(name))
 	if i < 0 {
