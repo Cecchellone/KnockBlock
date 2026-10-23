@@ -37,7 +37,7 @@ func utf16Ptr(s string) *uint16 {
 
 // NewConsentStore returns a Detector that reads the Windows consent store.
 func NewConsentStore(opts Options) (Detector, error) {
-	return newConsentStore(&registryWalker{}, opts), nil
+	return newConsentStore(&registryWalker{}, &winProcesses{}, opts), nil
 }
 
 // registryWalker enumerates the consent store with raw registry calls and

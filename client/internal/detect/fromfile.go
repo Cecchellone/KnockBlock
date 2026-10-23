@@ -18,7 +18,7 @@ import (
 // Empty lines and lines starting with '#' are ignored; a missing file means
 // nothing is in use. Names and the ignore list work as for the consent store.
 func FromFile(path string, opts Options) Detector {
-	return newConsentStore(&fileWalker{path: path}, opts)
+	return newConsentStore(&fileWalker{path: path}, nil, opts)
 }
 
 type fileWalker struct {
