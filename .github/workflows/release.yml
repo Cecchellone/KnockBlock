@@ -187,8 +187,9 @@ jobs:
           function Autostart { (Get-ItemProperty $run -Name KnockBlock -ErrorAction SilentlyContinue).KnockBlock }
           function Running { Get-Process knockblock -ErrorAction SilentlyContinue }
 
-          # 1. For everyone (the default as administrator): Program Files.
-          Msi "/i `"$msi`" /qn /l*v msi.log"
+          # 1. For everyone: Program Files (silent installs need ALLUSERS=1;
+          # without it they install for the current user only).
+          Msi "/i `"$msi`" ALLUSERS=1 /qn /l*v msi.log"
           if (-not (Test-Path $machineExe)) { throw "knockblock.exe not installed at $machineExe" }
           if (-not (Test-Path $machineLnk)) { throw "Start menu shortcut missing at $machineLnk" }
           if ((Autostart) -ne "`"$machineExe`"") { throw "unexpected Run value: '$(Autostart)'" }
@@ -237,7 +238,7 @@ jobs:
           Write-Host "Uninstalled cleanly"
 
           # 2. For the current user only, without autostart.
-          Msi "/i `"$msi`" ALLUSERS=`"`" MSIINSTALLPERUSER=1 AUTOSTART=0 /qn /l*v msi.log"
+          Msi "/i `"$msi`" AUTOSTART=0 /qn /l*v msi.log"
           if (-not (Test-Path $userExe)) { throw "knockblock.exe not installed at $userExe" }
           if (-not (Test-Path $userLnk)) { throw "Start menu shortcut missing at $userLnk" }
           if (Autostart) { throw "Run value written despite AUTOSTART=0" }
@@ -247,11 +248,11 @@ jobs:
 
           # 3. Upgrade while the app runs: the setup closes it (it reports
           # offline and quits) and Restart Manager starts the new version.
-          Msi "/i `"$old`" /qn /l*v msi.log"
+          Msi "/i `"$old`" ALLUSERS=1 /qn /l*v msi.log"
           Start-Process $machineExe | Out-Null
           Start-Sleep -Seconds 5
           if (-not (Running)) { throw "0.0.1 did not start" }
-          Msi "/i `"$msi`" /qn /l*v msi.log"
+          Msi "/i `"$msi`" ALLUSERS=1 /qn /l*v msi.log"
           Start-Sleep -Seconds 10
           Select-String -Path $log -Pattern 'closing at Windows|starting version' | Select-Object -Last 4 | ForEach-Object { $_.Line }
           if (-not (Select-String -Path $log -Pattern 'closing at Windows.*update=true')) { throw "the running app was not closed for the update" }

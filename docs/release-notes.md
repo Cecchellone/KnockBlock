@@ -14,8 +14,8 @@ KnockBlock gets a Start menu shortcut and starts with Windows. Installing a
 newer version over an older one (installed the same way) closes the running
 app, tells you it is updating, and starts it again.
 
-Silent installs: `msiexec /i KnockBlock-<version>.msi /qn` (for everyone, as
-administrator); add `ALLUSERS="" MSIINSTALLPERUSER=1` for the current user,
+Silent installs: `msiexec /i KnockBlock-<version>.msi /qn` installs for the
+current user; add `ALLUSERS=1` (as administrator) for everyone,
 `APPLICATIONFOLDER="D:\Apps\KnockBlock"` for another folder, `AUTOSTART=0` to
 not start with Windows.
 

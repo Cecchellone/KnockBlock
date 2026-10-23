@@ -15,10 +15,10 @@
     6. finish, with "Start KnockBlock" (checked).
   It needs the WixToolset.UI.wixext and WixToolset.Util.wixext extensions.
 
-  Silent installs: `msiexec /i KnockBlock.msi /qn` installs for everyone when
-  run as administrator; add `ALLUSERS="" MSIINSTALLPERUSER=1` for the current
-  user only, `APPLICATIONFOLDER=…` for another folder and `AUTOSTART=0` to not
-  start with Windows.
+  Silent installs: `msiexec /i KnockBlock.msi /qn` installs for the current
+  user; add `ALLUSERS=1` (as administrator) for everyone,
+  `APPLICATIONFOLDER=…` for another folder and `AUTOSTART=0` to not start
+  with Windows.
 
   Upgrades replace an older version installed the same way (for everyone or
   for the current user); downgrades are refused. Never change UpgradeCode:
