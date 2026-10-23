@@ -54,9 +54,11 @@ These three requirements drive every design decision. If a change conflicts with
 /LICENSE
 /.gitignore                     # must ignore secrets.yaml, build output, *.exe
 /firmware/
-  knockblock.yaml                 # main ESPHome config for the real board
+  knockblock.yaml                 # main ESPHome config for the real board (local build)
+  knockblock-package.yaml         # same firmware as a remote package (fetched from GitHub)
+  examples/                       # device configs that use the remote package
   host-test.yaml                # same logic on ESPHome's `host` platform, for tests without hardware
-  common/                       # shared packages (status logic, watchdog, entities)
+  common/                       # shared packages: core.yaml (status logic, watchdog, entities), board.yaml (hardware)
   components/                   # local external components (knockblock_i18n: display labels)
   locales/                      # display strings, one file per language (see §6.2)
   secrets.example.yaml          # template; real secrets.yaml is git-ignored

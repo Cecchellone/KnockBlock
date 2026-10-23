@@ -17,6 +17,12 @@ host:
 packages:
   core: !include common/core.yaml
 
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [knockblock_i18n]
+
 api:
   reboot_timeout: 0s
 

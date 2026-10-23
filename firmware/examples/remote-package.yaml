@@ -1,0 +1,24 @@
+# Example device config that uses KnockBlock as a remote package, for the
+# ESPHome dashboard or the Home Assistant ESPHome add-on. Copy it, adjust the
+# names and put Wi-Fi and the API key in your secrets.yaml.
+
+substitutions:
+  name: knockblock
+  friendly_name: KnockBlock
+  # Must match `ref` below.
+  knockblock_ref: main
+
+packages:
+  knockblock:
+    url: https://github.com/Cecchellone/KnockBlock
+    ref: main
+    files: [firmware/knockblock-package.yaml]
+    refresh: 1d
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
