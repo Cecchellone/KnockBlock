@@ -1,0 +1,28 @@
+# KnockBlock firmware, built from this checkout: for development and for
+# flashing with `esphome run knockblock.yaml`. Users of the ESPHome dashboard
+# or the Home Assistant add-on can use the remote package instead, see
+# knockblock-package.yaml.
+#
+# Needs secrets.yaml (copy secrets.example.yaml).
+
+substitutions:
+  name: knockblock
+  friendly_name: KnockBlock
+
+packages:
+  core: !include common/core.yaml
+  board: !include common/board.yaml
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [knockblock_i18n, knockblock_presence]
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key

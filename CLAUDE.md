@@ -54,9 +54,12 @@ These three requirements drive every design decision. If a change conflicts with
 /LICENSE
 /.gitignore                     # must ignore secrets.yaml, build output, *.exe
 /firmware/
-  knockblock.yaml                 # main ESPHome config for the real board
+  knockblock.yaml                 # main ESPHome config for the real board (local build)
+  knockblock-package.yaml         # same firmware as a remote package (fetched from GitHub)
+  examples/                       # device configs that use the remote package
   host-test.yaml                # same logic on ESPHome's `host` platform, for tests without hardware
-  common/                       # shared packages (status logic, watchdog, entities)
+  common/                       # shared packages: core.yaml (status logic, watchdog, entities), board.yaml (hardware)
+  components/                   # local external components (knockblock_i18n: display labels)
   locales/                      # display strings, one file per language (see §6.2)
   secrets.example.yaml          # template; real secrets.yaml is git-ignored
 /proto/
@@ -67,6 +70,7 @@ These three requirements drive every design decision. If a change conflicts with
 /client/                        # Go module
   go.mod
   cmd/knockblock/                 # main package: tray app entry point
+  cmd/knockctl/                   # dev CLI on the same client (tests, trying the device); not shipped
   internal/espapi/              # minimal Native API client (transport, noise, framing, messages)
   internal/espapi/pb/           # generated protobuf code (do not edit)
   internal/detect/              # mic/webcam detection (Windows impl + fake for tests)
@@ -75,9 +79,11 @@ These three requirements drive every design decision. If a change conflicts with
   internal/i18n/                # locale loading, language detection, fallback
   internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
   internal/tray/                # tray icon, menu, icons per status
+  internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/
-  knockblock.iss                  # Inno Setup script (English + Italian)
+  knockblock.wxs                  # MSI definition (WiX 3 subset, built on Linux with wixl)
+  condition.idt                   # Condition table row wixl cannot express (AUTOSTART=0)
 /docs/
   protocol-notes.md             # what we learned about the Native API, with aioesphomeapi references
   adding-a-language.md          # step-by-step guide
@@ -88,11 +94,14 @@ These three requirements drive every design decision. If a change conflicts with
 - Target board: Waveshare ESP32-C6-LCD-1.47. Use `esp32: variant: esp32c6` with `framework: type: esp-idf`.
 - **Verify before writing pins**: display (SPI pins, CS, DC, RST, backlight), LED GPIO (believed to be GPIO8), panel dimensions and offsets for the ST7789 172×320. Take them from the official Waveshare wiki/schematic and note the source URL in a YAML comment. Do not guess: a wrong pin means a black screen.
 - Entities exposed over the Native API (names in English, stable IDs):
-  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `mic`, `camera`, `call`, `dnd`, `offline`. Changing it updates LED colour and display label.
+  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `mic`, `camera`, `call`, `dnd`, `offline`. It shows the **combined** status of all sources (see Presence below) and updates LED colour and display label. Setting it directly (Home Assistant) reports the "manual" source.
   - `select` **`display_language`** — options are language codes (`en`, `it`, …); persisted across reboots (`restore_value: true`).
-  - `button` **`heartbeat`** — pressed periodically by the PC app; restarts a watchdog script.
+  - API action **`report_presence(pc, status, app)`** — called by every PC app on change and at least every ~30 s.
+  - `text_sensor` **`active_app`**, **`active_pc`** — app and PC causing the current status; **`status_label`** — the localized label shown.
+  - `button` **`heartbeat`** — keeps the manual source alive.
+  - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
-- **Watchdog**: if no heartbeat (and no status change) arrives for ~2 minutes, set `status` to `offline`. This prevents the light from staying on "call" after the PC shuts down. Do not rely on `api.connected`, because Home Assistant counts as a client too.
+- **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `dnd` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
 - `api:` with `encryption: key: !secret api_encryption_key` and **`reboot_timeout: 0s`** (otherwise the device reboots in a loop when neither the PC nor Home Assistant is connected).
 - `ota:` and `logger:` enabled; no `web_server`.
 - Fonts: the display font **must include accented glyphs** used by supported languages (at least `àèéìòù ÀÈÉÌÒÙ`). When a language is added, extend the glyph set.
@@ -104,12 +113,12 @@ These three requirements drive every design decision. If a change conflicts with
 
 Implement, in this order:
 
-1. Framing: plaintext (`0x00`, varint length, varint type, payload) and Noise (`0x01`, 2-byte big-endian length, encrypted payload).
+1. Framing: plaintext (`0x00`, varint length, varint type, payload) and Noise (`0x01`, 2-byte big-endian length, encrypted payload; the decrypted payload starts with a 2-byte type and a 2-byte length).
 2. Noise handshake exactly as `aioesphomeapi` does it (including prologue and the server-hello frame).
 3. Hello / connection negotiation as done by the current `aioesphomeapi` for the pinned ESPHome version.
 4. `ListEntities` → map entity `object_id`/name to numeric `key` (commands use keys).
 5. `SubscribeStates` → track current `status` and `display_language` values (they may be changed from Home Assistant).
-6. Commands: `SelectCommandRequest`, `ButtonCommandRequest`.
+6. Commands: `SelectCommandRequest`, `ButtonCommandRequest`, `ExecuteServiceRequest` (the `report_presence` action; string arguments only).
 7. Keepalive: answer device `PingRequest`; send our own pings; detect dead connections.
 8. Graceful `DisconnectRequest`/`DisconnectResponse`.
 9. Reconnect with exponential backoff and jitter, forever, silently.
@@ -122,13 +131,14 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - An app is "in use" when `LastUsedTimeStop == 0` and `LastUsedTimeStart != 0`. Verify this on a real machine and document findings in `docs/`.
 - Poll every 1–2 s (simple and cheap). Event-based `RegNotifyChangeKeyValue` is an optional later optimization.
 - User-configurable **ignore list** by executable name (e.g. apps that keep the mic open outside calls).
+- Report **which app** uses the camera/microphone, using friendly names from a built-in table that the settings can extend (`docs/presence.md`). Browsers show as the browser.
 - Windows-specific code behind `//go:build windows`; a fake implementation for tests so the module builds and tests on Linux.
 
 ### 5.3 Status logic
 
 - `mic && camera` → `call`; `camera` only → `camera`; `mic` only → `mic`; none → `free`.
 - Manual override from the tray menu (`dnd`, `free`, auto) takes priority until cleared.
-- Send status only on change, plus a heartbeat every ~30 s.
+- Send `report_presence(pc, status, app)` on change and every ~30 s; `pc` defaults to the Windows computer name (configurable). Send `offline` on exit. A setting can omit app names.
 - On resume from sleep / network change: force reconnect and resend status immediately.
 
 ### 5.4 UX
@@ -148,7 +158,8 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
 - Embed icon and version info in the executable.
-- Installer with Inno Setup (`installer/knockblock.iss`), offering English and Italian during setup, with optional "Start with Windows".
+- Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
+- Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both to a GitHub release on tags `vX.Y.Z`.
 
 ## 6. Internationalization
 
@@ -170,7 +181,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 6.3 Installer and docs
 
-- Inno Setup: include `English` and `Italian` language entries.
+- MSI: no custom UI strings except the downgrade error message (English). Add localized dialogs only if a custom UI is ever needed.
 - `README.md` is in English; a translated `README.it.md` is welcome but optional.
 
 ## 7. Milestones
@@ -184,7 +195,7 @@ Work in small PRs, one milestone (or part of one) at a time. Each milestone has 
 5. **Detection + status logic** — registry reader, ignore list, state machine, fake for tests. Accept: unit tests for the state machine; manual test notes on Windows.
 6. **Tray app** — systray, menu, reconnect/backoff, sleep/resume handling, heartbeat, i18n wired in. Accept: idle memory ≤ 15 MB reported in the PR.
 7. **Settings page + config** — on-demand localhost UI, DPAPI secret storage, autostart toggle, localized.
-8. **Installer + release** — Inno Setup script, GitHub Actions release artifact.
+8. **Installer + release** — MSI, firmware bundle, GitHub Actions release (pipeline in place; the installer ships the tray app once M6 exists).
 
 ## 8. Environment notes for cloud sessions
 
