@@ -98,6 +98,14 @@ func (a *app) loadConfig() {
 	if err != nil {
 		a.log.Error("loading configuration; using defaults", "err", err)
 	}
+	// A key pasted into config.json by hand is encrypted and removed.
+	if changed, err := cfg.ProtectPlainKey(); err != nil {
+		a.log.Error("protecting the key", "err", err)
+	} else if changed {
+		if err := config.Save(a.opts.ConfigPath, cfg); err != nil {
+			a.log.Error("saving the protected key", "err", err)
+		}
+	}
 	var mod time.Time
 	if fi, err := os.Stat(a.opts.ConfigPath); err == nil {
 		mod = fi.ModTime()

@@ -21,6 +21,9 @@ type Config struct {
 	// KeyProtected is the API encryption key, encrypted for the current
 	// Windows user with DPAPI, base64. Use Key and SetKey. Never logged.
 	KeyProtected string `json:"key_protected,omitempty"`
+	// KeyPlain lets a user paste the key into config.json by hand; the app
+	// moves it into KeyProtected on start (ProtectPlainKey) and saves.
+	KeyPlain string `json:"key,omitempty"`
 	// Language of the tray and settings page; empty follows Windows.
 	Language string `json:"language,omitempty"`
 	// DisplayLanguage is set on the device's display_language select on
@@ -143,4 +146,17 @@ func (c *Config) SetKey(key string) error {
 	}
 	c.KeyProtected = base64.StdEncoding.EncodeToString(blob)
 	return nil
+}
+
+// ProtectPlainKey moves a hand-written plain key into KeyProtected. It
+// reports whether the configuration changed and must be saved.
+func (c *Config) ProtectPlainKey() (bool, error) {
+	if c.KeyPlain == "" {
+		return false, nil
+	}
+	if err := c.SetKey(c.KeyPlain); err != nil {
+		return false, err
+	}
+	c.KeyPlain = ""
+	return true, nil
 }

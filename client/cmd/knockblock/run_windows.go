@@ -13,10 +13,14 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/Cecchellone/KnockBlock/client/internal/autostart"
 	"github.com/Cecchellone/KnockBlock/client/internal/config"
+	"github.com/Cecchellone/KnockBlock/client/internal/i18n"
 	"github.com/Cecchellone/KnockBlock/client/internal/logfile"
 	"github.com/Cecchellone/KnockBlock/client/internal/memdebug"
+	"github.com/Cecchellone/KnockBlock/client/internal/settingsui"
 	"github.com/Cecchellone/KnockBlock/client/internal/tray"
+	"github.com/Cecchellone/KnockBlock/client/locales"
 )
 
 func run(debugLog bool, debugMem time.Duration) error {
@@ -63,24 +67,39 @@ func run(debugLog bool, debugMem time.Duration) error {
 	if err != nil {
 		return err
 	}
+	catalog, err := i18n.Load(locales.FS)
+	if err != nil {
+		return err
+	}
+	hostname, _ := os.Hostname()
+	settings := settingsui.New(settingsui.Deps{
+		ConfigPath:      cfgPath,
+		Catalog:         catalog,
+		SystemLanguages: i18n.SystemLanguages,
+		Hostname:        hostname,
+		Autostart:       autostartSetting{},
+		Browse:          browse,
+		Logger:          log,
+		ClientInfo:      "KnockBlock " + version + " (settings)",
+	})
+	defer settings.Close()
 	return tray.Run(tray.Options{
 		ConfigPath:   cfgPath,
 		Version:      version,
 		Logger:       log,
-		OpenSettings: openConfigFile,
+		OpenSettings: func(string) error { return settings.Open() },
 	})
 }
 
-// openConfigFile opens config.json in Notepad, creating it with the
-// defaults first. The settings page (milestone 7) replaces this.
-func openConfigFile(path string) error {
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if err := config.Save(path, config.Default()); err != nil {
-			return err
-		}
-	}
+// autostartSetting adapts the autostart package to the settings page.
+type autostartSetting struct{}
+
+func (autostartSetting) Enabled() bool     { return autostart.Enabled() }
+func (autostartSetting) Set(on bool) error { return autostart.Set(on) }
+
+// browse opens url in the default browser.
+func browse(url string) error {
 	verb, _ := windows.UTF16PtrFromString("open")
-	exe, _ := windows.UTF16PtrFromString("notepad.exe")
-	arg, _ := windows.UTF16PtrFromString(`"` + path + `"`)
-	return windows.ShellExecute(0, verb, exe, arg, nil, windows.SW_SHOWNORMAL)
+	target, _ := windows.UTF16PtrFromString(url)
+	return windows.ShellExecute(0, verb, target, nil, nil, windows.SW_SHOWNORMAL)
 }

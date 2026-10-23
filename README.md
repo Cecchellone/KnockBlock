@@ -66,7 +66,8 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 
 - The **icon colour** follows this PC's status: green free, amber microphone, orange camera, red call, purple do not disturb. It is grey while the light is unreachable.
 - The **menu** shows the status and the connection. You can force "Free" or "Do not disturb" ("Automatic" goes back to detection), open the settings, toggle "Start with Windows", or quit.
-- The **settings** are stored in `%APPDATA%\KnockBlock\config.json`: device host, port, encryption key (encrypted with Windows DPAPI), languages, PC name, ignored apps, custom app names, notifications. The app reloads them as soon as they are saved.
+- **Settings…** opens a small page in your browser (served on `127.0.0.1` only while it is open, behind a random per-session link; it closes itself after 3 minutes without use). It has the device host and port, the encryption key, the app and display languages, the PC name, whether to send app names, ignored apps, custom app names, notifications and "Start with Windows", plus a **Test connection** button. Everything is in your language (English or Italian; English is the fallback).
+- The settings are stored in `%APPDATA%\KnockBlock\config.json`; the encryption key is encrypted with Windows DPAPI and never shown again once saved. The app reloads the file as soon as it changes. If you edit the file by hand, you can put the key in plain text as `"key": "…"`: the app encrypts it on the next start and removes the plain copy.
 - **Logs** go to `%LOCALAPPDATA%\KnockBlock\logs\knockblock.log`. Run `knockblock.exe -debug -debug-mem 30s` to log details and memory use.
 
 ### Trying the PC side without the tray app

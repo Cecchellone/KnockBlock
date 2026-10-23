@@ -85,3 +85,18 @@ func TestNoKey(t *testing.T) {
 		t.Fatal("SetKey(\"\") did not clear the key")
 	}
 }
+
+func TestProtectPlainKey(t *testing.T) {
+	c := Default()
+	if changed, err := c.ProtectPlainKey(); changed || err != nil {
+		t.Fatalf("no plain key: %v, %v", changed, err)
+	}
+	c.KeyPlain = "secret"
+	changed, err := c.ProtectPlainKey()
+	if !changed || err != nil || c.KeyPlain != "" {
+		t.Fatalf("changed %v, err %v, plain %q", changed, err, c.KeyPlain)
+	}
+	if k, _ := c.Key(); k != "secret" {
+		t.Fatalf("Key = %q", k)
+	}
+}
