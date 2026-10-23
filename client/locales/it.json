@@ -27,6 +27,8 @@
   "notify.old_firmware": "Il firmware della luce è troppo vecchio per questa app. Aggiornalo con ESPHome.",
   "notify.doorbell_title": "Campanello",
   "notify.doorbell": "Qualcuno è alla porta.",
+  "notify.doorbell_reply": "Rispondi sulla luce",
+  "notify.doorbell_send": "Invia",
   "notify.updating": "Aggiornamento di KnockBlock in corso: tra poco riparte da solo.",
   "notify.updated": "KnockBlock è stato aggiornato alla versione {version}.",
   "lang.name": "Italiano",

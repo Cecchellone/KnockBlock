@@ -49,6 +49,9 @@ var (
 	// ErrNoPresenceAction means the device firmware has no report_presence
 	// action, i.e. it predates multi-PC presence and must be updated.
 	ErrNoPresenceAction = errors.New("link: device firmware has no report_presence action")
+	// ErrNoMessageAction means the device firmware cannot show messages
+	// (no show_message action): it is older than this app.
+	ErrNoMessageAction = errors.New("link: device firmware has no show_message action")
 )
 
 // State describes the connection, for the tray tooltip and notifications.
@@ -84,10 +87,11 @@ type Supervisor struct {
 	log   *slog.Logger
 	force chan struct{}
 
-	mu     sync.Mutex
-	conn   Conn
-	action espapi.Entity
-	gen    uint64
+	mu      sync.Mutex
+	conn    Conn
+	action  espapi.Entity
+	message espapi.Entity // show_message; zero if the firmware has none
+	gen     uint64
 }
 
 // New returns a supervisor; call Run to start it.
@@ -125,7 +129,14 @@ func (s *Supervisor) Run(ctx context.Context) {
 			if needsConfig {
 				delay = s.opts.MaxBackoff
 			}
-			s.log.Debug("connection failed", "err", err, "retry_in", delay)
+			// The first failure in a row goes to the log file, so a long
+			// outage can be told apart from a quiet light; retries stay at
+			// debug level.
+			if failures == 1 {
+				s.log.Warn("connection failed", "err", err, "retry_in", delay)
+			} else {
+				s.log.Debug("connection failed", "err", err, "retry_in", delay)
+			}
 			if !s.wait(ctx, delay) {
 				return
 			}
@@ -140,8 +151,9 @@ func (s *Supervisor) Run(ctx context.Context) {
 			}
 			cancel()
 		}
+		message, _ := ents.Find(espapi.KindAction, "show_message")
 		s.mu.Lock()
-		s.conn, s.action = conn, action
+		s.conn, s.action, s.message = conn, action, message
 		s.gen++
 		s.mu.Unlock()
 		s.state(State{Connected: true})
@@ -232,6 +244,28 @@ func (s *Supervisor) Report(ctx context.Context, pc, status, app, devices string
 	}
 	err := conn.ExecuteAction(ctx, action, args)
 	return gen, err
+}
+
+// CanShowMessage reports whether the light is connected and can show a
+// message (ShowMessage).
+func (s *Supervisor) CanShowMessage() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.conn != nil && s.message.ObjectID != ""
+}
+
+// ShowMessage shows a short message from this PC on the light's display.
+func (s *Supervisor) ShowMessage(ctx context.Context, pc, text string) error {
+	s.mu.Lock()
+	conn, action := s.conn, s.message
+	s.mu.Unlock()
+	if conn == nil {
+		return ErrNotConnected
+	}
+	if action.ObjectID == "" {
+		return ErrNoMessageAction
+	}
+	return conn.ExecuteAction(ctx, action, map[string]string{"pc": pc, "message": text})
 }
 
 // Generation identifies the current connection: it changes on every new

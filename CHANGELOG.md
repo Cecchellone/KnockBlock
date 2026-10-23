@@ -31,6 +31,8 @@ changes per minor version.
   webcam off. It ranks below `dnd`.
 - During a call the info bar shows how long it has lasted (minutes and
   seconds) instead of the time.
+- Messages from a PC (`show_message`) show on the display for 20 s, with a
+  white bar at the bottom that shrinks towards the centre.
 - Icons at the bottom of the display show the phone (call open), the
   microphone (on, muted or unused) and the webcam (on or off). PC apps
   report them with the new `report_activity` action; `active_devices`
@@ -38,6 +40,9 @@ changes per minor version.
 
 ### PC app (Windows)
 
+- The doorbell notification has a reply box when it shows on screen
+  (notification mode "text" or "text and sound"): type an answer, press
+  Enter, and it appears on the light for 20 s.
 - The settings window has no Save or Cancel: every change is saved at
   once (a text field when you leave it), on the light too.
 - The webcam is detected again. Recent Windows 11 builds stopped recording
