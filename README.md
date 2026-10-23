@@ -51,6 +51,12 @@ scripts/check-go.sh   # gofmt, go vet, staticcheck, tests, Windows cross-build (
 
 The required Go toolchain is pinned in `client/go.mod` and downloaded automatically by the `go` command.
 
+### Installing the firmware from the ESPHome dashboard / Home Assistant
+
+No checkout needed: KnockBlock is available as a remote ESPHome package. Create a device in the ESPHome dashboard (or the Home Assistant ESPHome add-on) and use [`firmware/examples/remote-package.yaml`](firmware/examples/remote-package.yaml) as its configuration. It pulls `firmware/knockblock-package.yaml` and the `knockblock_i18n` external component from this repository at `knockblock_ref` (default `main`). Your config only adds Wi-Fi and the API encryption key.
+
+### Building the firmware from a checkout
+
 Firmware (needs ESPHome, at the version in `proto/VERSION`):
 
 ```sh

@@ -6,11 +6,12 @@
 #   substitutions:
 #     name: knockblock
 #     friendly_name: KnockBlock
+#     knockblock_ref: main
 #
 #   packages:
 #     knockblock:
 #       url: https://github.com/Cecchellone/KnockBlock
-#       ref: main
+#       ref: ${knockblock_ref}
 #       files: [firmware/knockblock-package.yaml]
 #       refresh: 1d
 #
@@ -23,8 +24,8 @@
 #       key: !secret api_encryption_key
 
 substitutions:
-  # Git ref the external component is fetched from. Keep it equal to the
-  # package `ref` (override it next to `name` when pinning a tag or branch).
+  # Git ref the external component is fetched from. Set it in the including
+  # file and use it for the package `ref` too, so both always match.
   knockblock_ref: main
 
 packages:

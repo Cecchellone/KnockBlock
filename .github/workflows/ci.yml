@@ -58,6 +58,16 @@ jobs:
           esphome config host-test.yaml > /dev/null
           esphome config knockblock.yaml > /dev/null
 
+      - name: Validate the remote package from GitHub at this branch
+        # Fetches firmware/knockblock-package.yaml and the external component
+        # exactly as a user's device config would. Forks are skipped: their
+        # branches do not exist in this repository.
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          cp secrets.yaml examples/
+          esphome -s knockblock_ref "${{ github.head_ref || github.ref_name }}" \
+            config examples/remote-package.yaml > /dev/null
+
       - name: Compile host test firmware
         run: esphome compile host-test.yaml
 

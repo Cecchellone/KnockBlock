@@ -5,13 +5,14 @@
 substitutions:
   name: knockblock
   friendly_name: KnockBlock
-  # Must match `ref` below.
+  # KnockBlock version: a branch or tag of the GitHub repository. Used for
+  # both the package and its external component.
   knockblock_ref: main
 
 packages:
   knockblock:
     url: https://github.com/Cecchellone/KnockBlock
-    ref: main
+    ref: ${knockblock_ref}
     files: [firmware/knockblock-package.yaml]
     refresh: 1d
 
