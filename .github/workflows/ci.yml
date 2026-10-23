@@ -63,10 +63,16 @@ jobs:
         # exactly as a user's device config would. Forks are skipped: their
         # branches do not exist in this repository.
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # ESPHome clones with git; authenticate it while the repository is
+          # private (harmless once it is public).
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           cp secrets.yaml examples/
           esphome -s knockblock_ref "${{ github.head_ref || github.ref_name }}" \
-            config examples/remote-package.yaml > /dev/null
+            config examples/remote-package.yaml > remote-config.log 2>&1 || { cat remote-config.log; exit 1; }
+          tail -n 1 remote-config.log
 
       - name: Compile host test firmware
         run: esphome compile host-test.yaml

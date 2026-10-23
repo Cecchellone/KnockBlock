@@ -1,6 +1,11 @@
 # Example device config that uses KnockBlock as a remote package, for the
 # ESPHome dashboard or the Home Assistant ESPHome add-on. Copy it, adjust the
 # names and put Wi-Fi and the API key in your secrets.yaml.
+#
+# ESPHome clones the repository anonymously, so this works once the
+# KnockBlock repository is public. While it is private, build from a checkout
+# with knockblock.yaml, or give git credentials for github.com to the
+# machine that runs ESPHome.
 
 substitutions:
   name: knockblock
