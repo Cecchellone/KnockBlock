@@ -49,6 +49,8 @@ changes per minor version.
   camera use where the app looked; the app now asks Windows' camera service
   which programs are streaming. A webcam used through NVIDIA Broadcast's
   virtual camera counts too, shown with the app in the call.
+- Discord's own mute (and deafen) button counts as a muted microphone:
+  in a call with Discord muted and no webcam the light turns blue.
 - A call with the microphone muted in Windows (the sound settings, a mute
   key, or the app muting its own recording) and the webcam off shows as
   `muted`. `knockctl detect live` prints what detection sees every second.

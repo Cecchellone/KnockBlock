@@ -140,7 +140,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 5.2 Detection
 
-- Microphone: the active capture sessions of the Windows audio sessions (WASAPI, Core Audio COM by vtable, no CGO). Fallback when they cannot be read: the consent store.
+- Microphone: the active capture sessions of the Windows audio sessions (WASAPI, Core Audio COM by vtable, no CGO). Fallback when they cannot be read: the consent store. Muted when Windows mutes the session or device, or, for Discord (which keeps recording while muted), when its own mute button is on, read from its local storage (`internal/detect/discord.go`).
 - Camera (and the microphone fallback): `HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{microphone,webcam}`, including the `NonPackaged` subkey (desktop apps; executable path encoded with `#` instead of `\`). An app is "in use" when `LastUsedTimeStop == 0` and `LastUsedTimeStart != 0` and its program, by full path, still runs (stale entries of crashed apps and old versions). Findings in `docs/detection-notes.md`.
 - Poll every 1–2 s (simple and cheap). Event-based `RegNotifyChangeKeyValue` is an optional later optimization.
 - User-configurable **ignore list** by executable name (e.g. apps that keep the mic open outside calls).

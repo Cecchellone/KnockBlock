@@ -134,6 +134,7 @@ type consentStore struct {
 	w      walker
 	audio  captureSessions        // nil: the microphone comes from the consent store
 	camera cameraStreams          // nil: the camera comes from the consent store
+	mutes  appMutes               // nil: only Windows' mute counts
 	procs  processes              // nil: entries are trusted as they are
 	polled bool                   // procs refreshed during this poll
 	ignore map[string]bool        // lower-case exe or package names
@@ -195,6 +196,13 @@ func newConsentStore(w walker, procs processes, opts Options) *consentStore {
 // audio sessions cannot be read.
 func (c *consentStore) withAudio(a captureSessions, self uint32) *consentStore {
 	c.audio, c.self = a, self
+	return c
+}
+
+// withAppMutes makes the mute buttons of apps that keep recording while
+// muted (Discord) count as a muted microphone.
+func (c *consentStore) withAppMutes(m appMutes) *consentStore {
+	c.mutes = m
 	return c
 }
 
@@ -317,14 +325,18 @@ func (c *consentStore) pollAudio() error {
 		if !ok || e.ignored {
 			continue
 		}
+		muted := rec.muted
+		if !muted && c.mutes != nil {
+			muted, _ = c.mutes.muted(e.exe) // muted inside the app (Discord)
+		}
 		// A program can hold several sessions, on several devices: it is
 		// muted only if every one of them is.
 		if i := indexKey(c.dst.Mic, e.app.Key); i >= 0 {
-			c.dst.Mic[i].Muted = c.dst.Mic[i].Muted && rec.muted
+			c.dst.Mic[i].Muted = c.dst.Mic[i].Muted && muted
 			continue
 		}
 		app := e.app
-		app.Muted = rec.muted
+		app.Muted = muted
 		if e.browser {
 			app = c.webApp(app, e.exe)
 		}

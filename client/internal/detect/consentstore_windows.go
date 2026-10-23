@@ -4,6 +4,7 @@ package detect
 
 import (
 	"errors"
+	"os"
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
@@ -41,6 +42,9 @@ func utf16Ptr(s string) *uint16 {
 func NewConsentStore(opts Options) (Detector, error) {
 	self := windows.GetCurrentProcessId()
 	c := newConsentStore(&registryWalker{}, &winProcesses{}, opts).withAudio(&wasapi{}, self)
+	if appData, err := os.UserConfigDir(); err == nil {
+		c.withAppMutes(newDiscordMutes(appData))
+	}
 	if cam, err := newSensorMonitor(); err == nil {
 		c.withCamera(cam, self)
 	}

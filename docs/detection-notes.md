@@ -72,9 +72,18 @@ session rule: **in use = a capture session in the Active state**.
 ### Muted calls
 
 - An app muted *inside* a call (Discord, Teams) may keep recording, so its
-  capture session stays active. KnockBlock sees a mute only when Windows
-  knows it: the recording device muted (sound settings, a mute key) or the
-  app's audio session muted. `knockctl detect live` prints, every second,
+  capture session stays active. KnockBlock sees a mute when Windows knows
+  it: the recording device muted (sound settings, a mute key) or the app's
+  audio session muted.
+- Discord (checked October 2026): muting keeps the capture session active
+  and unmuted for Windows. Discord saves its mute and deafen buttons in its
+  localStorage (`MediaEngineStore`: `{"default":{..."mute":true,"deaf":false...}}`),
+  stored by Chromium as LevelDB in `%APPDATA%\discord\Local Storage\leveldb`.
+  KnockBlock reads the newest value there (the last one in the `.log` file,
+  else in a `.ldb` table) while Discord records. Undocumented: if a Discord
+  update changes it, the mute is unknown and the microphone counts as on.
+  The official alternative, Discord's local RPC API, needs every user to
+  register a Discord application, so it is not used. `knockctl detect live` prints, every second,
   each app's recording and playback sessions with their mute state and
   level, to check how an app behaves.
 
