@@ -168,7 +168,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
 - Embed icon and version info in the executable: `scripts/winres.sh` draws the icon with `internal/icon` and writes `cmd/knockblock/rsrc_windows_amd64.syso` with go-winres (pinned, run via `go run`).
 - Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
-- Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both to a GitHub release on tags `vX.Y.Z`.
+- Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both as a GitHub release on every push to `main` (next patch after the latest `vX.Y.Z` tag; the release creates the tag) and on tags `vX.Y.Z` pushed by hand (new minor/major series).
 
 ## 6. Internationalization
 
@@ -204,7 +204,7 @@ Work in small PRs, one milestone (or part of one) at a time. Each milestone has 
 5. **Detection + status logic** — registry reader, ignore list, state machine, fake for tests. Accept: unit tests for the state machine; manual test notes on Windows.
 6. **Tray app** — systray, menu, reconnect/backoff, sleep/resume handling, heartbeat, i18n wired in. Accept: idle memory ≤ 15 MB reported in the PR.
 7. **Settings page + config** — on-demand localhost UI, DPAPI secret storage, autostart toggle, localized.
-8. **Installer + release** — MSI, firmware bundle, GitHub Actions release; release checklist in `docs/releasing.md`, changelog in `CHANGELOG.md`. Tags are pushed by the owner after the hardware checks.
+8. **Installer + release** — MSI, firmware bundle, GitHub Actions release; release checklist in `docs/releasing.md`, changelog in `CHANGELOG.md`. Every merge into `main` is released as a patch; the owner tags minor/major versions after the hardware checks.
 
 ## 8. Environment notes for cloud sessions
 

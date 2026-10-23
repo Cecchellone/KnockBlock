@@ -61,7 +61,7 @@ The required Go toolchain is pinned in `client/go.mod` and downloaded automatica
 
 ### Downloads
 
-Each [release](https://github.com/Cecchellone/KnockBlock/releases) has:
+Every merge into `main` publishes a new [release](https://github.com/Cecchellone/KnockBlock/releases) (the next patch version). Each one has:
 
 - `KnockBlock-<version>.msi`: the Windows tray app. Installs per user, with no administrator rights; `AUTOSTART=0` skips starting with Windows.
 - `knockblock-<version>.esphomebundle.tar.gz`: the firmware configuration. Extract it, fill in `secrets.yaml`, then run `esphome run knockblock.yaml`.

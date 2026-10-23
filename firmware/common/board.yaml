@@ -25,7 +25,7 @@ esphome:
   friendly_name: ${friendly_name}
   project:
     name: cecchellone.knockblock
-    version: "0.1.0"
+    version: "0.1.0"  # project version; release builds set it
 
 esp32:
   variant: esp32c6

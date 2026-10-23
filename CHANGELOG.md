@@ -5,9 +5,20 @@ User-visible changes per release. The format follows
 [Semantic Versioning](https://semver.org/). How to cut a release:
 [`docs/releasing.md`](docs/releasing.md).
 
+Every merge into `main` is released automatically as a new patch version;
+the release page lists the merged PRs. This file collects the notable
+changes per minor version.
+
 ## [Unreleased]
 
-First release, planned as 0.1.0.
+### Release
+
+- Every merge into `main` publishes a GitHub release with the MSI and the
+  firmware bundle, as the next patch version.
+
+## [0.1.0]
+
+First release.
 
 ### Light (firmware)
 

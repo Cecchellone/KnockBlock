@@ -1,12 +1,18 @@
 name: Release
 
 # Builds the deliverables on every PR (as workflow artifacts, to try them)
-# and publishes them as a GitHub release when a tag v<major>.<minor>.<patch>
-# is pushed:
+# and publishes them as a GitHub release:
+#   - on every push to main, as the next patch version after the latest
+#     v<major>.<minor>.<patch> tag (v0.1.0 when there is none); the release
+#     creates the tag;
+#   - when a tag v<major>.<minor>.<patch> is pushed by hand, as that version
+#     (to start a new minor or major series).
+# Files:
 #   - knockblock-<version>.esphomebundle.tar.gz  firmware config bundle
 #   - KnockBlock-<version>.msi                   Windows installer
 on:
   push:
+    branches: [main]
     tags: ["v*.*.*"]
   pull_request:
   workflow_dispatch:
@@ -14,22 +20,55 @@ on:
 permissions:
   contents: read
 
+# One release at a time, so consecutive merges get consecutive versions.
+# PR runs are grouped per PR and only the latest one matters.
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   version:
     name: Version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags
+
       - id: v
-        # The tag without "v"; otherwise 0.0.<run number> (MSI versions
-        # must be numeric).
+        # MSI versions must be numeric: major.minor.patch.
+        #   tag push   -> the tag without "v"
+        #   main push  -> latest release tag + 1 patch (0.1.0 if none);
+        #                 nothing to publish if this commit is already tagged
+        #   otherwise  -> 0.0.<run number>, not published
         run: |
+          latest="$(git tag -l 'v*.*.*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+          publish=false
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            version="${GITHUB_REF_NAME#v}"
+            publish=true
+          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            if git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              version="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)"
+              version="${version#v}"
+              echo "This commit is already released as v$version."
+            elif [[ -z "$latest" ]]; then
+              version=0.1.0
+              publish=true
+            else
+              IFS=. read -r major minor patch <<<"${latest#v}"
+              version="$major.$minor.$((patch + 1))"
+              publish=true
+            fi
           else
-            echo "version=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            version="0.0.${GITHUB_RUN_NUMBER}"
           fi
+          echo "Version $version (latest tag: ${latest:-none}, publish: $publish)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
   firmware-bundle:
     name: Firmware bundle
@@ -145,7 +184,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: needs.version.outputs.publish == 'true'
     needs: [version, firmware-bundle, windows-installer, installer-smoke-test]
     runs-on: ubuntu-latest
     permissions:
@@ -161,8 +200,12 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        # On a main push the release creates the tag on this commit. Tags
+        # created with GITHUB_TOKEN do not start another workflow run.
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "KnockBlock ${{ needs.version.outputs.version }}" \
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "KnockBlock $VERSION" \
             --notes-file docs/release-notes.md \
             --generate-notes

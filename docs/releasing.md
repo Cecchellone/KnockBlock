@@ -1,32 +1,51 @@
 # Releasing KnockBlock
 
-A release is a Git tag `vX.Y.Z` on `main`. Pushing the tag runs
-`.github/workflows/release.yml`, which:
+Every merge into `main` is released automatically. The `Release` workflow
+(`.github/workflows/release.yml`):
 
-1. builds the firmware bundle and the MSI,
-2. installs the MSI on a Windows runner, starts the app, checks the idle
-   memory against the 20 MB ceiling (CLAUDE.md §2.1), then uninstalls it,
-3. publishes both files as a GitHub release. The text comes from
-   [`release-notes.md`](release-notes.md), followed by the notes GitHub
-   generates from the merged PRs.
+1. picks the version: the latest `vX.Y.Z` tag plus one patch (`v0.1.0` for
+   the first release), so merges give `v0.1.1`, `v0.1.2`, …;
+2. builds the firmware bundle (with that version as the device's project
+   version) and the MSI;
+3. installs the MSI on a Windows runner, starts the app, checks the idle
+   memory against the 20 MB ceiling (CLAUDE.md §2.1), then uninstalls it;
+4. creates the tag and publishes both files as a GitHub release. The text
+   comes from [`release-notes.md`](release-notes.md), followed by the notes
+   GitHub generates from the merged PRs.
+
+If a step fails, nothing is published and no tag is created; the next merge
+(or a re-run of the workflow) releases instead. Merges released while one
+run is still going wait for it, so versions never collide.
+
+To start a new **minor or major** series (for example after a feature set
+you have tested on the hardware), push the tag by hand; later merges then
+continue from it (`v0.2.0` → `v0.2.1` …):
+
+```sh
+git checkout main && git pull
+git tag -a v0.2.0 -m "KnockBlock 0.2.0"
+git push origin v0.2.0
+```
 
 Versions follow [Semantic Versioning](https://semver.org/). The MSI needs a
-purely numeric version, so pre-release tags such as `v0.1.0-rc1` do not
-work. Use a patch version for release candidates.
+purely numeric version, so pre-release tags such as `v0.1.0-rc1` are not
+used. A newer MSI installs over an older one.
 
 ## Checklist
 
-### Before tagging
+### Before a minor or major release
 
-- [ ] Everything for the release is merged into `main`, and CI on `main` is
-      green: the `CI` and `Release` workflows.
+Patch releases need no checklist. Before tagging a new minor or major
+version:
+
+- [ ] CI on `main` is green: the `CI` and `Release` workflows.
 - [ ] `CHANGELOG.md` has a section for the new version, dated, with the
-      user-visible changes.
+      user-visible changes since the previous one.
 - [ ] `proto/VERSION` matches the ESPHome version you tested with. Change it
       only on purpose: it pins both the protobuf code and the ESPHome
       version in CI.
-- [ ] The MSI and the firmware bundle from the latest `Release` run on
-      `main` (workflow artifacts) pass the hardware checks below.
+- [ ] The MSI and the firmware bundle of the latest automatic release pass
+      the hardware checks below.
 
 ### Hardware checks (by a person; CI cannot do these)
 
@@ -63,16 +82,10 @@ Write down anything new about detection in
 
 ### Tagging
 
-```sh
-git checkout main && git pull
-git tag -a v0.1.0 -m "KnockBlock 0.1.0"
-git push origin v0.1.0
-```
-
-Follow the `Release` run in the Actions tab. If a job fails, fix the
-problem on `main`, then delete the tag (locally and on GitHub) and push it
-again on the new commit. Do this only while the release has not been
-published.
+Push the tag as shown above and follow the `Release` run in the Actions
+tab. If a job fails, fix the problem on `main` (that merge is released as a
+patch of the previous series), then delete the tag locally and on GitHub
+and push it again on the new commit.
 
 ### After publishing
 
