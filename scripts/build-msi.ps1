@@ -70,20 +70,20 @@ foreach ($culture in ($languages.Keys | Select-Object -Skip 1)) {
   $langMsi = Join-Path $work "$culture.msi"
   wix msi transform -p -t language $baseMsi $langMsi -o $mst
   if ($LASTEXITCODE -ne 0) { throw "wix msi transform ($culture) failed" }
-  $db = $installer.GetType().InvokeMember("OpenDatabase", "InvokeMethod", $null, $installer, @($out, 1))
-  $view = $db.GetType().InvokeMember("OpenView", "InvokeMethod", $null, $db, @("SELECT ``Name``,``Data`` FROM _Storages"))
-  $rec = $installer.GetType().InvokeMember("CreateRecord", "InvokeMethod", $null, $installer, @(2))
-  $rec.GetType().InvokeMember("StringData", "SetProperty", $null, $rec, @(1, "$lcid"))
-  $rec.GetType().InvokeMember("SetStream", "InvokeMethod", $null, $rec, @(2, $mst))
+  $db = $installer.GetType().InvokeMember("OpenDatabase", "InvokeMethod", $null, $installer, @([string]$out, [int]1))
+  $view = $db.GetType().InvokeMember("OpenView", "InvokeMethod", $null, $db, @([string]"SELECT ``Name``,``Data`` FROM _Storages"))
+  $rec = $installer.GetType().InvokeMember("CreateRecord", "InvokeMethod", $null, $installer, @([int]2))
+  $rec.GetType().InvokeMember("StringData", "SetProperty", $null, $rec, @([int]1, [string]"$lcid"))
+  $rec.GetType().InvokeMember("SetStream", "InvokeMethod", $null, $rec, @([int]2, [string]$mst))
   $view.GetType().InvokeMember("Execute", "InvokeMethod", $null, $view, @($rec))
-  $view.GetType().InvokeMember("Modify", "InvokeMethod", $null, $view, @(3, $rec)) # msiViewModifyAssign
+  $view.GetType().InvokeMember("Modify", "InvokeMethod", $null, $view, @([int]3, $rec)) # msiViewModifyAssign
   $db.GetType().InvokeMember("Commit", "InvokeMethod", $null, $db, $null)
   [void][Runtime.InteropServices.Marshal]::ReleaseComObject($view)
   [void][Runtime.InteropServices.Marshal]::ReleaseComObject($db)
 }
-$db = $installer.GetType().InvokeMember("OpenDatabase", "InvokeMethod", $null, $installer, @($out, 1))
-$sum = $db.GetType().InvokeMember("SummaryInformation", "GetProperty", $null, $db, @(1))
-$sum.GetType().InvokeMember("Property", "SetProperty", $null, $sum, @(7, "x64;" + (($languages.Values) -join ",")))
+$db = $installer.GetType().InvokeMember("OpenDatabase", "InvokeMethod", $null, $installer, @([string]$out, [int]1))
+$sum = $db.GetType().InvokeMember("SummaryInformation", "GetProperty", $null, $db, @([int]1))
+$sum.GetType().InvokeMember("Property", "SetProperty", $null, $sum, @([int]7, [string]("x64;" + (($languages.Values) -join ","))))
 $sum.GetType().InvokeMember("Persist", "InvokeMethod", $null, $sum, $null)
 $db.GetType().InvokeMember("Commit", "InvokeMethod", $null, $db, $null)
 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($sum)
