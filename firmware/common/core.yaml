@@ -35,6 +35,7 @@ knockblock_presence:
   status_select: status
   app_sensor: active_app
   pc_sensor: active_pc
+  devices_sensor: active_devices
   timeout: ${watchdog_timeout}
 
 logger:
@@ -56,6 +57,18 @@ api:
         app: string
       then:
         - lambda: 'id(presence).report(pc, status, app);'
+
+    # Same, from PC apps that also tell what is in use, for the icons on the
+    # display: `devices` is a comma-separated list of call, mic, mic_muted
+    # and camera (docs/presence.md). PC apps use it when the firmware has it.
+    - action: report_activity
+      variables:
+        pc: string
+        status: string
+        app: string
+        devices: string
+      then:
+        - lambda: 'id(presence).report(pc, status, app, devices);'
 
 select:
   # The combined status, as language-neutral IDs; the display label is
@@ -135,6 +148,15 @@ text_sensor:
     id: active_pc
     name: Active PC
     icon: mdi:monitor
+    update_interval: never
+
+  # What the PC shown has in use: call, mic or mic_muted, camera
+  # (comma-separated; empty when nothing).
+  - platform: template
+    id: active_devices
+    name: Active devices
+    icon: mdi:phone-in-talk
+    entity_category: diagnostic
     update_interval: never
 
 script:

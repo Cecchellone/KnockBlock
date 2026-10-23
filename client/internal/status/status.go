@@ -1,6 +1,7 @@
 package status
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/detect"
@@ -32,6 +33,43 @@ const (
 type Result struct {
 	Status string
 	App    string // friendly name of the app causing Status; may be empty
+
+	// What is in use, for the icons on the display. They are reported as
+	// they are, also with a manual override.
+	InCall bool     // an app keeps the microphone open, muted or not
+	Mic    MicState // the microphone
+	Camera bool     // an app streams from the camera
+}
+
+// MicState is the state of the microphone in a Result.
+type MicState uint8
+
+// Microphone states.
+const (
+	MicOff   MicState = iota // no app records
+	MicOn                    // an app records, not muted
+	MicMuted                 // every app recording is muted
+)
+
+// Devices encodes InCall, Mic and Camera for the device's report_activity
+// action: a comma-separated list of "call", "mic" or "mic_muted", and
+// "camera" (docs/presence.md). Empty when nothing is in use.
+func (r Result) Devices() string {
+	var parts [3]string
+	n := 0
+	if r.InCall {
+		parts[n], n = "call", n+1
+	}
+	switch r.Mic {
+	case MicOn:
+		parts[n], n = "mic", n+1
+	case MicMuted:
+		parts[n], n = "mic_muted", n+1
+	}
+	if r.Camera {
+		parts[n], n = "camera", n+1
+	}
+	return strings.Join(parts[:n], ",")
 }
 
 // Compute derives this PC's status from what is in use (CLAUDE.md §5.3):
@@ -42,17 +80,25 @@ type Result struct {
 // then by name, so the choice is stable between polls. With sendApps false
 // the app is always empty.
 func Compute(s *detect.Snapshot, o Override, sendApps bool) Result {
-	switch o {
-	case ForceFree:
-		return Result{Status: Free}
-	case ForceDND:
-		return Result{Status: DND}
-	}
 	mic, cam := false, len(s.Camera) > 0
 	for _, a := range s.Mic {
 		mic = mic || !a.Muted
 	}
-	var r Result
+	r := Result{InCall: len(s.Mic) > 0, Camera: cam}
+	switch {
+	case mic:
+		r.Mic = MicOn
+	case r.InCall:
+		r.Mic = MicMuted
+	}
+	switch o {
+	case ForceFree:
+		r.Status = Free
+		return r
+	case ForceDND:
+		r.Status = DND
+		return r
+	}
 	switch {
 	case mic && cam:
 		r.Status = Call
@@ -60,10 +106,11 @@ func Compute(s *detect.Snapshot, o Override, sendApps bool) Result {
 		r.Status = Camera
 	case mic:
 		r.Status = Mic
-	case len(s.Mic) > 0:
+	case r.InCall:
 		r.Status = Muted
 	default:
-		return Result{Status: Free}
+		r.Status = Free
+		return r
 	}
 	if sendApps {
 		if cam {

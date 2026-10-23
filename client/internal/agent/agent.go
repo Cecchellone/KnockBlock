@@ -19,7 +19,7 @@ type Link interface {
 	// Generation identifies the current connection, changing on every new
 	// one; 0 means not connected.
 	Generation() uint64
-	Report(ctx context.Context, pc, status, app string) (gen uint64, err error)
+	Report(ctx context.Context, pc, status, app, devices string) (gen uint64, err error)
 }
 
 // Config configures an Agent.
@@ -172,7 +172,7 @@ func (a *Agent) report(ctx context.Context, r *status.Reporter, res status.Resul
 	}
 	sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	sentGen, err := a.cfg.Link.Report(sctx, a.cfg.PC, res.Status, res.App)
+	sentGen, err := a.cfg.Link.Report(sctx, a.cfg.PC, res.Status, res.App, res.Devices())
 	if err != nil {
 		a.log.Debug("report not sent", "err", err)
 		return
@@ -183,7 +183,7 @@ func (a *Agent) report(ctx context.Context, r *status.Reporter, res status.Resul
 func (a *Agent) sendOffline() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if _, err := a.cfg.Link.Report(ctx, a.cfg.PC, status.Offline, ""); err != nil {
+	if _, err := a.cfg.Link.Report(ctx, a.cfg.PC, status.Offline, "", ""); err != nil {
 		a.log.Debug("offline report not sent", "err", err)
 	}
 }

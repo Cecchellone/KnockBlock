@@ -13,7 +13,7 @@ table of up to 8 **sources**:
 
 | Source | Reported by | Kept alive by |
 |--------|-------------|---------------|
-| A PC (identified by its name) | the tray app, via the API action `report_presence(pc, status, app)` | the next `report_presence` |
+| A PC (identified by its name) | the tray app, via the API action `report_activity(pc, status, app, devices)` (or `report_presence(pc, status, app)` on older apps) | the next report |
 | `manual` (no name) | anyone setting the `status` select directly: Home Assistant, `knockctl status` | the `heartbeat` button |
 
 - A source that sends nothing for `watchdog_timeout` (120 s on the board) is
@@ -40,14 +40,37 @@ table of up to 8 **sources**:
 | `status_label` | text sensor | the localized label shown on the display |
 | `active_app` | text sensor | e.g. `Teams` |
 | `active_pc` | text sensor | e.g. `PC-STUDIO` |
+| `active_devices` | text sensor | what the PC shown has in use: e.g. `call,mic_muted,camera` |
 | `privacy_mode` | switch (board only) | hides app and PC **on the display**; Home Assistant still sees them |
 | `report_presence` | API action | arguments `pc`, `status`, `app` (all strings) |
+| `report_activity` | API action | `pc`, `status`, `app`, `devices` (all strings); used by the PC app when the firmware has it |
+
+### Devices in use
+
+`devices` is a comma-separated list, empty when nothing is in use:
+
+| Name | Meaning |
+|------|---------|
+| `call` | an app keeps the microphone open, muted or not: a call is open |
+| `mic` | the microphone records, not muted |
+| `mic_muted` | the microphone is open but every app recording is muted |
+| `camera` | an app streams from the camera |
+
+Reports without it (`report_presence`, the manual source) get the devices
+implied by the status: `call` → call, mic, camera; `muted` → call,
+mic_muted; `mic` → mic; `camera` → camera. They are reported as detected
+also under a manual override, so the icons stay true.
 
 ## Display
 
-The localized status is drawn large, and under it the line `<app> · <pc>` in a
-smaller font. If that line is too wide, only the app is shown. The line is
-left out in privacy mode, and when the status has no app or PC. Display
+A darker info bar at the top shows the PC on the left, the app in the
+middle (both left out in privacy mode, and when the status has no app or
+PC) and on the right the call duration (`m:ss`, `h:mm:ss` past an hour)
+while the PC shown is in a call, else the time. The localized status is
+drawn large in the middle. At the bottom, while any PC reports, three icons
+show the phone (lit during a call), the microphone (lit while it records;
+crossed out and lit when muted, crossed out and dimmed when unused) and the
+camera (lit while it streams, crossed out and dimmed otherwise). Display
 labels are checked against the font at `esphome config` time. App and PC
 names come from the PCs at run time, so characters outside the detail font's
 glyphs are not drawn.
