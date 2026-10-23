@@ -96,6 +96,24 @@ func detectCmd() error {
 	if err != nil {
 		return err
 	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+
+	// The microphone comes from the audio sessions: who records right now.
+	fmt.Println()
+	fmt.Fprintln(tw, "AUDIO SESSIONS (microphone)\t\t\t")
+	fmt.Fprintln(tw, "PID\tRECORDING\tEXE\tPATH")
+	err = detect.DumpAudioSessions(func(pid uint32, exe, path string, active bool) {
+		recording := ""
+		if active {
+			recording = "YES"
+		}
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n", pid, recording, exe, path)
+	})
+	if err != nil {
+		return fmt.Errorf("audio sessions: %w", err)
+	}
 	return tw.Flush()
 }
 

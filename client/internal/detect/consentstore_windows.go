@@ -35,9 +35,12 @@ func utf16Ptr(s string) *uint16 {
 	return p
 }
 
-// NewConsentStore returns a Detector that reads the Windows consent store.
+// NewConsentStore returns a Detector that reads the Windows consent store
+// for the camera, and the audio sessions (WASAPI) for the microphone, with
+// the consent store as the fallback when the audio sessions cannot be read.
 func NewConsentStore(opts Options) (Detector, error) {
-	return newConsentStore(&registryWalker{}, &winProcesses{}, opts), nil
+	c := newConsentStore(&registryWalker{}, &winProcesses{}, opts)
+	return c.withAudio(&wasapi{}, windows.GetCurrentProcessId()), nil
 }
 
 // registryWalker enumerates the consent store with raw registry calls and

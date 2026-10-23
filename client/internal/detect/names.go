@@ -39,6 +39,20 @@ var builtinNames = map[string]string{
 	"vivaldi.exe": "Vivaldi",
 }
 
+// builtinIgnore lists programs that record the microphone all the time to
+// process it for other apps (noise removal, virtual microphones): the app
+// that uses their output is the one in a call. Lower-case executable names.
+var builtinIgnore = []string{
+	"nvidia broadcast.exe",
+	"nvcontainer.exe",
+	"rtx voice.exe",
+	"voicemeeter.exe",
+	"voicemeeterpro.exe",
+	"voicemeeter8.exe",
+	"voicemeeter8x64.exe",
+	"krisp.exe",
+}
+
 // browsers are the executables whose window titles are searched for a web
 // app (WebAppFromTitle).
 var browsers = map[string]bool{

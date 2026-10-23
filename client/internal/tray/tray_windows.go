@@ -84,6 +84,9 @@ func (a *app) onReady() {
 	})
 	go a.uiLoop()
 	go a.menuLoop()
+	if err := watchDoubleClick(a.openSettings); err != nil {
+		a.log.Warn("double click on the tray icon unavailable", "err", err)
+	}
 	if err := endsession.Watch(a.endSession); err != nil {
 		a.log.Warn("cannot watch for updates and sign-out", "err", err)
 	}
@@ -313,13 +316,13 @@ func (a *app) redraw() {
 
 func (a *app) checkAlerts() {
 	a.mu.Lock()
-	st, notifications := a.snap.Link, a.cfg.Notifications
+	st := a.snap.Link
 	a.mu.Unlock()
 	alert, ok := a.alerts.Update(st, time.Now())
-	if !ok || !notifications {
+	if !ok {
 		return
 	}
-	if err := showNotification(a.t("app.name"), a.t(alert.Key, alert.Args...)); err != nil {
+	if err := a.notify(a.t("app.name"), a.t(alert.Key, alert.Args...)); err != nil {
 		a.log.Warn("notification not shown", "err", err)
 	}
 }
@@ -330,7 +333,7 @@ func (a *app) checkAlerts() {
 func (a *app) endSession(update bool) {
 	a.log.Info("closing at Windows' request", "update", update)
 	if update {
-		if err := showNotification(a.t("app.name"), a.t("notify.updating")); err != nil {
+		if err := a.notify(a.t("app.name"), a.t("notify.updating")); err != nil {
 			a.log.Warn("update notification not shown", "err", err)
 		}
 		time.Sleep(2 * time.Second) // the notification goes with the icon
@@ -363,7 +366,7 @@ func (a *app) announceUpdate() {
 		return // first run: nothing was updated
 	}
 	time.Sleep(2 * time.Second) // let the icon appear first
-	if err := showNotification(a.t("app.name"), a.t("notify.updated", "version", a.opts.Version)); err != nil {
+	if err := a.notify(a.t("app.name"), a.t("notify.updated", "version", a.opts.Version)); err != nil {
 		a.log.Warn("update notification not shown", "err", err)
 	}
 }
@@ -372,9 +375,18 @@ func (a *app) announceUpdate() {
 // standard Windows notification (it can be turned off in the settings).
 func (a *app) doorbell() {
 	a.log.Info("doorbell")
-	if err := showNotification(a.t("notify.doorbell_title"), a.t("notify.doorbell")); err != nil {
+	if err := a.notify(a.t("notify.doorbell_title"), a.t("notify.doorbell")); err != nil {
 		a.log.Warn("doorbell notification not shown", "err", err)
 	}
+}
+
+// notify shows a notification as the settings say (none, silent, sound
+// only, or with sound).
+func (a *app) notify(title, body string) error {
+	a.mu.Lock()
+	mode := a.cfg.Notify
+	a.mu.Unlock()
+	return showNotification(mode, title, body)
 }
 
 // iconFor returns the tray icon in a status colour, drawn once per colour.

@@ -164,17 +164,17 @@ type win struct {
 	building int // page of the controls being created
 	page     int // page shown
 
-	tabs                                         windows.HWND
-	host, port, key, removeKey, testBtn, result  windows.HWND
-	devStatus, devLang, devFlip, devBacklight    windows.HWND
-	devLED, devPrivacy                           windows.HWND
-	pcName, lang                                 windows.HWND
-	sendApps, doorbell, notifications, autostart windows.HWND
-	ignore, names                                windows.HWND
-	langChoices, devLangChoices, flipChoices     []Choice
-	backlightChoices, ledChoices                 []Choice
-	cancelTest, cancelDevice                     context.CancelFunc
-	device                                       *Device // nil until read, or if unreachable
+	tabs                                        windows.HWND
+	host, port, key, removeKey, testBtn, result windows.HWND
+	devStatus, devLang, devFlip, devBacklight   windows.HWND
+	devLED, devPrivacy                          windows.HWND
+	pcName, lang                                windows.HWND
+	sendApps, doorbell, notify, autostart       windows.HWND
+	ignore, names                               windows.HWND
+	langChoices, devLangChoices, flipChoices    []Choice
+	backlightChoices, ledChoices, notifyChoices []Choice
+	cancelTest, cancelDevice                    context.CancelFunc
+	device                                      *Device // nil until read, or if unreachable
 
 	mu        sync.Mutex
 	testMsg   string
@@ -390,8 +390,10 @@ func (c *win) build() {
 	c.lang = combo(c.langChoices, box{x, 149, cw, 23})
 	c.sendApps = check(t("settings.send_apps"), box{x, 186, iw, 30})
 	c.doorbell = check(t("settings.doorbell"), box{x, 220, iw, 30})
-	c.notifications = check(t("settings.notifications"), box{x, 254, iw, 30})
-	c.autostart = check(t("settings.autostart"), box{x, 288, iw, 30})
+	label(t("settings.notify"), box{x, 256, iw, 16})
+	c.notifyChoices = c.model.NotifyModes()
+	c.notify = combo(c.notifyChoices, box{x, 274, cw, 23})
+	c.autostart = check(t("settings.autostart"), box{x, 306, iw, 30})
 
 	// Apps.
 	c.building = pageApps
@@ -604,7 +606,7 @@ func (c *win) fill(f Form) {
 	selectChoice(c.lang, c.langChoices, f.Language)
 	setCheck(c.sendApps, f.SendApps)
 	setCheck(c.doorbell, f.Doorbell)
-	setCheck(c.notifications, f.Notifications)
+	selectChoice(c.notify, c.notifyChoices, f.Notify)
 	setCheck(c.autostart, f.Autostart)
 }
 
@@ -614,7 +616,7 @@ func (c *win) form() Form {
 		PCName:   getText(c.pcName),
 		Language: chosen(c.lang, c.langChoices),
 		SendApps: isChecked(c.sendApps), Doorbell: isChecked(c.doorbell),
-		Notifications: isChecked(c.notifications), Autostart: isChecked(c.autostart),
+		Notify: chosen(c.notify, c.notifyChoices), Autostart: isChecked(c.autostart),
 		Ignore: strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
 		Names:  strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
 	}

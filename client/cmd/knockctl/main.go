@@ -10,8 +10,8 @@
 //	knockctl [flags] heartbeat          press the heartbeat button
 //	knockctl [flags] report <pc> <status> [app]
 //	                                    report a PC's status, as the tray app does
-//	knockctl detect                     list the Windows consent store entries:
-//	                                    which apps used the mic/camera, and which use it now
+//	knockctl detect                     list the Windows consent store entries and the
+//	                                    audio sessions: which apps use the mic/camera now
 //	knockctl [flags] agent              run the tray app's presence loop without a tray:
 //	                                    detect, compute and report until Ctrl-C
 //
