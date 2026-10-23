@@ -31,3 +31,40 @@ jobs:
           name: knockblock-windows-amd64
           path: dist/knockblock.exe
           if-no-files-found: error
+
+  firmware:
+    name: Firmware (validate, compile)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ESPHome (version from proto/VERSION)
+        run: pip install "esphome==$(cat ../proto/VERSION)"
+
+      - name: Create throwaway secrets
+        run: |
+          sed "s|^api_encryption_key: .*|api_encryption_key: \"$(openssl rand -base64 32)\"|" \
+            secrets.example.yaml > secrets.yaml
+
+      - name: Validate configurations
+        run: |
+          esphome config host-test.yaml > /dev/null
+          esphome config knockblock.yaml > /dev/null
+
+      - name: Compile host test firmware
+        run: esphome compile host-test.yaml
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/esphome
+          key: esphome-toolchains-${{ hashFiles('proto/VERSION') }}
+
+      - name: Compile ESP32-C6 firmware
+        run: esphome compile knockblock.yaml

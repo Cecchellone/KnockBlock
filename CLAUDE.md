@@ -57,6 +57,7 @@ These three requirements drive every design decision. If a change conflicts with
   knockblock.yaml                 # main ESPHome config for the real board
   host-test.yaml                # same logic on ESPHome's `host` platform, for tests without hardware
   common/                       # shared packages (status logic, watchdog, entities)
+  components/                   # local external components (knockblock_i18n: display labels)
   locales/                      # display strings, one file per language (see §6.2)
   secrets.example.yaml          # template; real secrets.yaml is git-ignored
 /proto/

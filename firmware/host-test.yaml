@@ -1,0 +1,31 @@
+# KnockBlock logic on ESPHome's `host` platform: the same shared package as
+# the real board, minus display and LED, running as a Linux process. Used by
+# the Go client's integration tests (scripts/itest-host.sh).
+#
+# Plaintext Native API on port 6053; no secrets needed.
+
+substitutions:
+  # Short, so tests can wait for the watchdog.
+  watchdog_timeout: 10s
+
+esphome:
+  name: knockblock-host
+  friendly_name: KnockBlock host test
+
+host:
+
+packages:
+  core: !include common/core.yaml
+
+api:
+  reboot_timeout: 0s
+
+script:
+  - id: apply_status
+    then:
+      - logger.log:
+          format: "Status %s, language %s, label '%s'"
+          args:
+            - id(status).current_option().c_str()
+            - id(display_language).current_option().c_str()
+            - id(status_label).state.c_str()

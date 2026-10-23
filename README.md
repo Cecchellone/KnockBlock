@@ -51,6 +51,16 @@ scripts/check-go.sh   # gofmt, go vet, staticcheck, tests, Windows cross-build (
 
 The required Go toolchain is pinned in `client/go.mod` and downloaded automatically by the `go` command.
 
+Firmware (needs ESPHome, at the version in `proto/VERSION`):
+
+```sh
+pip install "esphome==$(cat proto/VERSION)"
+cd firmware
+cp secrets.example.yaml secrets.yaml      # then fill in Wi-Fi and the API key
+esphome run knockblock.yaml               # compile and flash the board
+esphome compile host-test.yaml            # same logic as a Linux process, for tests
+```
+
 ## License
 
 KnockBlock is free software, released under the [GNU General Public License v3.0](LICENSE).

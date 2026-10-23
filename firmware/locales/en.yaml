@@ -1,0 +1,8 @@
+# English display labels (fallback language: every status must be defined).
+# Keys are status IDs; values are shown on the device display.
+free: Free
+mic: Mic on
+camera: Camera on
+call: In a call
+dnd: Do not disturb
+offline: Offline

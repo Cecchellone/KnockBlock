@@ -1,0 +1,101 @@
+# Shared KnockBlock logic, used unchanged by the real board (knockblock.yaml)
+# and by the host test build (host-test.yaml): the entities exposed over the
+# Native API, the heartbeat watchdog and the localized status label.
+#
+# The including file must define a script with id `apply_status` that shows
+# the current status (LED and display on the board, a log line on the host).
+# It runs after every change of `status` or `display_language`, once
+# `status_label` holds the new text.
+
+substitutions:
+  # Without a heartbeat (or a status change) for this long, the status
+  # becomes `offline`, so the light does not stay on "call" after the PC
+  # shuts down (CLAUDE.md §4).
+  watchdog_timeout: 120s
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [knockblock_i18n]
+
+knockblock_i18n:
+  id: labels
+  fallback: en
+  language_select: display_language
+  # One file per language; the file name is the language code.
+  languages: !include_dir_named ../locales
+
+logger:
+
+select:
+  # Language-neutral status IDs; the display label is localized separately.
+  - platform: template
+    id: status
+    name: Status
+    icon: mdi:door
+    options: [free, mic, camera, call, dnd, offline]
+    initial_option: offline
+    optimistic: true
+    restore_value: false
+    on_value:
+      - script.execute: status_changed
+      - if:
+          condition:
+            lambda: 'return x != "offline";'
+          then:
+            - script.execute: heartbeat_watchdog
+
+  - platform: template
+    id: display_language
+    name: Display language
+    icon: mdi:translate
+    entity_category: config
+    # Add a code here when adding firmware/locales/<code>.yaml.
+    options: [en, it]
+    initial_option: en
+    optimistic: true
+    restore_value: true
+    on_value:
+      - script.execute: status_changed
+
+button:
+  # Pressed periodically by the PC app.
+  - platform: template
+    id: heartbeat
+    name: Heartbeat
+    icon: mdi:heart-pulse
+    entity_category: diagnostic
+    on_press:
+      - script.execute: heartbeat_watchdog
+
+text_sensor:
+  # The text shown on the display, in the display language.
+  - platform: template
+    id: status_label
+    name: Status label
+    icon: mdi:label-outline
+    entity_category: diagnostic
+    update_interval: never
+
+script:
+  - id: heartbeat_watchdog
+    mode: restart
+    then:
+      - delay: ${watchdog_timeout}
+      - logger.log:
+          level: WARN
+          format: "No heartbeat for ${watchdog_timeout}: status set to offline"
+      - select.set:
+          id: status
+          option: offline
+
+  - id: status_changed
+    mode: queued
+    then:
+      - text_sensor.template.publish:
+          id: status_label
+          state: !lambda |-
+            return id(labels).get(id(display_language).current_option(),
+                                  id(status).current_option());
+      - script.execute: apply_status
