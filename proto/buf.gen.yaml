@@ -1,0 +1,10 @@
+# Code generation for the ESPHome Native API protobuf files; run generate.sh.
+version: v2
+plugins:
+  - local: ["go", "run", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12"]
+    out: ../client/internal/espapi/pb
+    opt:
+      - paths=source_relative
+      # ESPHome's files declare no go_package.
+      - Mapi.proto=github.com/Cecchellone/KnockBlock/client/internal/espapi/pb
+      - Mapi_options.proto=github.com/Cecchellone/KnockBlock/client/internal/espapi/pb

@@ -42,5 +42,9 @@ mkdir -p ../dist
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
 	-ldflags "-s -w -H=windowsgui -X main.version=${VERSION:-dev}" \
 	-o ../dist/knockblock.exe ./cmd/knockblock
+# knockctl is a console tool: no -H=windowsgui.
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+	-ldflags "-s -w -X main.version=${VERSION:-dev}" \
+	-o ../dist/knockctl.exe ./cmd/knockctl
 
 echo "All Go checks passed."
