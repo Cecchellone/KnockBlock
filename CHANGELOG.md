@@ -29,6 +29,12 @@ changes per minor version.
 - `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
 - New status `muted` (blue): in a call with the microphone muted and the
   webcam off. It ranks below `dnd`.
+- During a call the info bar shows how long it has lasted (minutes and
+  seconds) instead of the time.
+- Icons at the bottom of the display show the phone (call open), the
+  microphone (on, muted or unused) and the webcam (on or off). PC apps
+  report them with the new `report_activity` action; `active_devices`
+  shows them to Home Assistant.
 
 ### PC app (Windows)
 

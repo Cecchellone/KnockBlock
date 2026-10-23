@@ -17,11 +17,12 @@ type fakeConn struct {
 	done     chan struct{}
 	err      error
 	closed   bool
-	reports  [][3]string
+	reports  [][4]string
 	selects  []string
 	switches []string
 	onState  func(espapi.State)
 	noAction bool
+	activity bool // the firmware has report_activity
 }
 
 func newFakeConn() *fakeConn { return &fakeConn{done: make(chan struct{})} }
@@ -30,12 +31,16 @@ func (c *fakeConn) ListEntities(context.Context) (espapi.Entities, error) {
 	if c.noAction {
 		return espapi.Entities{{Kind: espapi.KindSelect, ObjectID: "status"}}, nil
 	}
-	return espapi.Entities{
+	ents := espapi.Entities{
 		{Kind: espapi.KindAction, ObjectID: "report_presence", Key: 7},
 		{Kind: espapi.KindSelect, ObjectID: "display_language", Key: 9, Options: []string{"en", "it"}},
 		{Kind: espapi.KindSwitch, ObjectID: "flip_display", Key: 11},
 		{Kind: espapi.KindEvent, ObjectID: "doorbell", Key: 12, Options: []string{"ring"}},
-	}, nil
+	}
+	if c.activity {
+		ents = append(ents, espapi.Entity{Kind: espapi.KindAction, ObjectID: "report_activity", Key: 8})
+	}
+	return ents, nil
 }
 
 func (c *fakeConn) SetSwitch(_ context.Context, key uint32, on bool) error {
@@ -68,10 +73,14 @@ func (c *fakeConn) ExecuteAction(_ context.Context, a espapi.Entity, v map[strin
 	if c.closed {
 		return espapi.ErrClosed
 	}
-	if a.Key != 7 {
-		return fmt.Errorf("wrong action %+v", a)
+	want := 3 // report_presence
+	if c.activity {
+		want = 4 // report_activity
 	}
-	c.reports = append(c.reports, [3]string{v["pc"], v["status"], v["app"]})
+	if a.Key != 7 && !(c.activity && a.Key == 8) || len(v) != want {
+		return fmt.Errorf("wrong action %+v or arguments %v", a, v)
+	}
+	c.reports = append(c.reports, [4]string{v["pc"], v["status"], v["app"], v["devices"]})
 	return nil
 }
 
@@ -171,25 +180,43 @@ func TestReconnectsAndReports(t *testing.T) {
 	log := &stateLog{}
 	s, _, _ := start(t, d, log)
 
-	if _, err := s.Report(context.Background(), "PC", "mic", "x"); err != nil && !errors.Is(err, ErrNotConnected) {
+	if _, err := s.Report(context.Background(), "PC", "mic", "x", "call,mic"); err != nil && !errors.Is(err, ErrNotConnected) {
 		t.Fatal(err)
 	}
 	waitFor(t, "first connection", func() bool { return log.last().Connected })
-	gen1, err := s.Report(context.Background(), "PC", "call", "Teams")
+	gen1, err := s.Report(context.Background(), "PC", "call", "Teams", "call,mic")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	c1.drop(errors.New("wifi lost"))
 	waitFor(t, "reconnection", func() bool {
-		gen, err := s.Report(context.Background(), "PC", "call", "Teams")
+		gen, err := s.Report(context.Background(), "PC", "call", "Teams", "call,mic")
 		return err == nil && gen != gen1
 	})
-	if len(c1.reports) != 1 || c1.reports[0] != [3]string{"PC", "call", "Teams"} {
+	if len(c1.reports) != 1 || c1.reports[0] != [4]string{"PC", "call", "Teams", ""} {
 		t.Fatalf("c1 reports %v", c1.reports)
 	}
 	if len(c2.reports) == 0 {
 		t.Fatal("nothing sent over the new connection")
+	}
+}
+
+func TestReportsActivity(t *testing.T) {
+	d := &fakeDialer{}
+	c := newFakeConn()
+	c.activity = true
+	d.push(c)
+	log := &stateLog{}
+	s, _, _ := start(t, d, log)
+	waitFor(t, "connection", func() bool { return log.last().Connected })
+	if _, err := s.Report(context.Background(), "PC", "muted", "Discord", "call,mic_muted"); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.reports) != 1 || c.reports[0] != [4]string{"PC", "muted", "Discord", "call,mic_muted"} {
+		t.Fatalf("reports %v", c.reports)
 	}
 }
 

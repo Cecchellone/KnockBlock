@@ -172,7 +172,9 @@ func (s *Supervisor) Run(ctx context.Context) {
 	}
 }
 
-// connect dials and finds the report_presence action.
+// connect dials and finds the action that reports presence:
+// report_activity, which also takes the devices in use, or report_presence
+// on firmware older than it.
 func (s *Supervisor) connect(ctx context.Context) (Conn, espapi.Entity, espapi.Entities, error) {
 	conn, err := s.opts.Dial(ctx)
 	if err != nil {
@@ -185,7 +187,10 @@ func (s *Supervisor) connect(ctx context.Context) (Conn, espapi.Entity, espapi.E
 		conn.Close()
 		return nil, espapi.Entity{}, nil, fmt.Errorf("link: listing entities: %w", err)
 	}
-	action, ok := ents.Find(espapi.KindAction, "report_presence")
+	action, ok := ents.Find(espapi.KindAction, "report_activity")
+	if !ok {
+		action, ok = ents.Find(espapi.KindAction, "report_presence")
+	}
 	if !ok {
 		conn.Close()
 		return nil, espapi.Entity{}, nil, ErrNoPresenceAction
@@ -210,16 +215,22 @@ func WatchDoorbell(ring func()) func(context.Context, Conn, espapi.Entities) err
 	}
 }
 
-// Report sends this PC's presence over the current connection. It returns
-// the connection generation used, which changes on every new connection.
-func (s *Supervisor) Report(ctx context.Context, pc, status, app string) (uint64, error) {
+// Report sends this PC's presence over the current connection: devices is
+// status.Result.Devices, left out on firmware without report_activity. It
+// returns the connection generation used, which changes on every new
+// connection.
+func (s *Supervisor) Report(ctx context.Context, pc, status, app, devices string) (uint64, error) {
 	s.mu.Lock()
 	conn, action, gen := s.conn, s.action, s.gen
 	s.mu.Unlock()
 	if conn == nil {
 		return 0, ErrNotConnected
 	}
-	err := conn.ExecuteAction(ctx, action, map[string]string{"pc": pc, "status": status, "app": app})
+	args := map[string]string{"pc": pc, "status": status, "app": app}
+	if action.ObjectID == "report_activity" {
+		args["devices"] = devices
+	}
+	err := conn.ExecuteAction(ctx, action, args)
 	return gen, err
 }
 

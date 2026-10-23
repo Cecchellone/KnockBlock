@@ -80,11 +80,6 @@ globals:
     type: Color
     initial_value: Color(0x30, 0x30, 0x30)
 
-  # millis() when the combined status became `call`; 0 when not in a call.
-  - id: call_start
-    type: uint32_t
-    initial_value: "0"
-
   # True while the display shows the doorbell instead of the status.
   - id: doorbell_shown
     type: bool
@@ -114,6 +109,21 @@ font:
     glyphsets: [GF_Latin_Kernel]
     glyphs: ["àèéìòùÀÈÉÌÒÙ·"]
 
+  # The icons at the bottom: phone, microphone and camera, on and off, from
+  # Material Design Icons (Pictogrammers, Apache License 2.0), pinned to a
+  # release. Codepoints from css/materialdesignicons.css of that release.
+  - file:
+      type: web
+      url: https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/v7.4.47/fonts/materialdesignicons-webfont.ttf
+    id: font_icons
+    size: 28
+    glyphs:
+      - "\U000F03F2" # phone
+      - "\U000F036C" # microphone
+      - "\U000F036D" # microphone-off
+      - "\U000F0567" # video
+      - "\U000F0568" # video-off
+
 knockblock_i18n:
   check_fonts: [font_label]
 
@@ -123,8 +133,8 @@ display:
     model: WAVESHARE-ESP32-C6-LCD-1.47
     # Landscape: 320x172. The flip_display switch turns it to 270.
     rotation: 90
-    # Redrawn on every status change and every minute (clock); the
-    # interval also refreshes the call minutes before the clock is set.
+    # Redrawn on every status change, every minute (clock) and every second
+    # during a call (call_timer below).
     update_interval: 30s
     lambda: |-
       const Color bg = id(current_color);
@@ -152,8 +162,8 @@ display:
 
       // Info bar at the top, slightly darker: the PC on the left, the app in
       // the middle (both hidden in privacy mode, and empty when the status
-      // has no source), and on the right the minutes in a call, else the
-      // time.
+      // has no source), and on the right how long the call has lasted, else
+      // the time.
       const int W = it.get_width(), H = it.get_height(), bar = 30;
       it.filled_rectangle(0, 0, W, bar, Color(bg.r * 3 / 4, bg.g * 3 / 4, bg.b * 3 / 4));
       int x1, y1, w, h;
@@ -168,8 +178,12 @@ display:
         return s;
       };
       char right[16] = "";
-      if (id(call_start) != 0) {
-        snprintf(right, sizeof(right), "%u min", (unsigned) ((millis() - id(call_start)) / 60000));
+      if (const uint32_t start = id(presence).call_start(); start != 0) {
+        const unsigned s = (millis() - start) / 1000;
+        if (s >= 3600)
+          snprintf(right, sizeof(right), "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
+        else
+          snprintf(right, sizeof(right), "%u:%02u", s / 60, s % 60);
       } else {
         auto now = id(sntp_time).now();
         if (now.is_valid())
@@ -181,8 +195,28 @@ display:
         it.print(W / 2, bar / 2, id(font_detail), fg, TextAlign::CENTER, fit(id(active_app).state, 120).c_str());
       }
 
-      // The status label, centered below the bar; two lines if too wide.
-      const int cx = W / 2, cy = bar + (H - bar) / 2;
+      // Icons at the bottom, while a PC reports: the phone during a call, the
+      // microphone (crossed out when muted) and the camera. Unused ones are
+      // dimmed.
+      const bool offline = id(status).current_option() == "offline";
+      const int row = offline ? 0 : 36;
+      if (!offline) {
+        const uint8_t dev = id(presence).devices();
+        using P = esphome::knockblock_presence::Presence;
+        const Color dim((fg.r + 2 * bg.r) / 3, (fg.g + 2 * bg.g) / 3, (fg.b + 2 * bg.b) / 3);
+        const int y = H - row / 2;
+        it.print(W / 2 - 64, y, id(font_icons), (dev & P::CALL) ? fg : dim, TextAlign::CENTER, "\U000F03F2");
+        if (dev & P::MIC)
+          it.print(W / 2, y, id(font_icons), fg, TextAlign::CENTER, "\U000F036C");
+        else
+          it.print(W / 2, y, id(font_icons), (dev & P::MIC_MUTED) ? fg : dim, TextAlign::CENTER, "\U000F036D");
+        it.print(W / 2 + 64, y, id(font_icons), (dev & P::CAMERA) ? fg : dim, TextAlign::CENTER,
+                 (dev & P::CAMERA) ? "\U000F0567" : "\U000F0568");
+      }
+
+      // The status label, centered between the bar and the icons; two
+      // lines if too wide.
+      const int cx = W / 2, cy = bar + (H - bar - row) / 2;
       const std::string &text = id(status_label).state;
       it.get_text_bounds(cx, cy, text.c_str(), id(font_label), TextAlign::CENTER, &x1, &y1, &w, &h);
       const size_t split = text.rfind(' ', text.size() / 2 + 1);
@@ -195,6 +229,17 @@ display:
       const std::string second = text.substr(split + 1);
       it.print(cx, cy - h / 2 - 4, id(font_label), fg, TextAlign::CENTER, first.c_str());
       it.print(cx, cy + h / 2 + 4, id(font_label), fg, TextAlign::CENTER, second.c_str());
+
+interval:
+  # The call duration in the info bar counts seconds.
+  - id: call_timer
+    interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(presence).call_start() != 0 && !id(doorbell_shown);'
+          then:
+            - component.update: main_display
 
 time:
   # The clock in the info bar, from the internet. Home Assistant is not
@@ -313,10 +358,6 @@ script:
           else if (st == "call") c = id(color_call);
           else if (st == "dnd") c = id(color_dnd);
           id(current_color) = c;
-          if (st != "call")
-            id(call_start) = 0;
-          else if (id(call_start) == 0)
-            id(call_start) = std::max<uint32_t>(millis(), 1);
       - if:
           condition:
             lambda: 'return id(status).current_option() == "offline";'

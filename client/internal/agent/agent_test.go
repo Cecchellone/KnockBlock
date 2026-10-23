@@ -42,7 +42,7 @@ func (l *fakeLink) Generation() uint64 { l.mu.Lock(); defer l.mu.Unlock(); retur
 
 func (l *fakeLink) setGen(g uint64) { l.mu.Lock(); defer l.mu.Unlock(); l.gen = g }
 
-func (l *fakeLink) Report(_ context.Context, pc, st, app string) (uint64, error) {
+func (l *fakeLink) Report(_ context.Context, pc, st, app, _ string) (uint64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.reports = append(l.reports, pc+" "+st+" "+app)
