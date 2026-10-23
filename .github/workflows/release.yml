@@ -97,7 +97,8 @@ jobs:
   windows-installer:
     name: Windows installer (MSI)
     needs: version
-    runs-on: ubuntu-latest
+    # WiX v5 builds MSIs on Windows only.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -106,16 +107,36 @@ jobs:
           go-version-file: client/go.mod
           cache-dependency-path: client/go.sum
 
-      - name: Install wixl and msitools
-        run: sudo apt-get update -q && sudo apt-get install -y -q wixl msitools
+      - name: Install WiX v5
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
 
       - name: Build MSI
-        run: scripts/build-msi.sh "${{ needs.version.outputs.version }}"
+        shell: pwsh
+        run: scripts/build-msi.ps1 -Version "${{ needs.version.outputs.version }}"
+
+      - name: Build an older MSI for the upgrade test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force upgrade | Out-Null
+          Copy-Item "dist/KnockBlock-${{ needs.version.outputs.version }}.msi" upgrade/keep.msi
+          scripts/build-msi.ps1 -Version 0.0.1
+          Move-Item dist/KnockBlock-0.0.1.msi upgrade/KnockBlock-0.0.1.msi
+          Move-Item upgrade/keep.msi "dist/KnockBlock-${{ needs.version.outputs.version }}.msi" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-test
+          path: upgrade/KnockBlock-0.0.1.msi
+          if-no-files-found: error
 
       - name: Build knockctl
         # The command-line tool for trying the light (README); a console
         # program, so no -H=windowsgui.
         working-directory: client
+        shell: bash
         run: |
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
             -o "../dist/knockctl-${{ needs.version.outputs.version }}.exe" ./cmd/knockctl
@@ -132,52 +153,79 @@ jobs:
     name: Install and uninstall the MSI on Windows
     needs: windows-installer
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: windows-installer
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: upgrade-test
+
       - name: Install, check, uninstall
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $msi = (Get-ChildItem KnockBlock-*.msi).FullName
-          $exe = Join-Path $env:LOCALAPPDATA 'Programs\KnockBlock\knockblock.exe'
+          $msi = (Get-ChildItem KnockBlock-*.msi | Where-Object Name -ne 'KnockBlock-0.0.1.msi').FullName
+          $old = (Resolve-Path KnockBlock-0.0.1.msi).Path
+          $version = [regex]::Match($msi, 'KnockBlock-(.+)\.msi').Groups[1].Value
+          $machineExe = Join-Path $env:ProgramFiles 'KnockBlock\knockblock.exe'
+          $userExe = Join-Path $env:LOCALAPPDATA 'Programs\KnockBlock\knockblock.exe'
           $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-          $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\KnockBlock.lnk'
+          $machineLnk = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\KnockBlock.lnk'
+          $userLnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\KnockBlock.lnk'
+          $log = Join-Path $env:LOCALAPPDATA 'KnockBlock\logs\knockblock.log'
+          $cfgDir = Join-Path $env:APPDATA 'KnockBlock'
+          # An existing config file skips the first-start settings window.
+          New-Item -ItemType Directory -Force $cfgDir | Out-Null
+          Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
 
+          # Waits for one process only, with a deadline. Start-Process -Wait
+          # also waits for every process it starts, so it never returns when
+          # Restart Manager restarts the app under msiexec.
+          function Wait-Bounded($p, $seconds, $what) {
+            $null = $p.Handle # keeps ExitCode readable after the exit
+            if (-not $p.WaitForExit($seconds * 1000)) {
+              Write-Host "::error::$what still running after $seconds s"
+              Get-Content msi.log -ErrorAction SilentlyContinue | Select-Object -Last 40
+              Get-Content $log -Tail 30 -ErrorAction SilentlyContinue
+              Get-Process knockblock, msiexec -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime, Path
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw "$what timed out"
+            }
+            $p.WaitForExit() # flushes ExitCode
+          }
           function Msi($arguments) {
-            $p = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
-            if ($p.ExitCode -ne 0) { Get-Content msi.log -ErrorAction SilentlyContinue | Select-Object -Last 40; throw "msiexec $arguments failed: $($p.ExitCode)" }
+            Write-Host "==> msiexec $arguments"
+            $p = Start-Process msiexec.exe -ArgumentList $arguments -PassThru
+            Wait-Bounded $p 300 "msiexec $arguments"
+            if ($p.ExitCode -ne 0) { Get-Content msi.log -ErrorAction SilentlyContinue | Select-Object -Last 60; throw "msiexec $arguments failed: $($p.ExitCode)" }
           }
           function Autostart { (Get-ItemProperty $run -Name KnockBlock -ErrorAction SilentlyContinue).KnockBlock }
+          function Running { Get-Process knockblock -ErrorAction SilentlyContinue }
 
-          # Default install: per user, no elevation, autostart on.
-          Msi "/i `"$msi`" /qn /l*v msi.log"
-          if (-not (Test-Path $exe)) { throw "knockblock.exe not installed at $exe" }
-          if (-not (Test-Path $lnk)) { throw "Start menu shortcut missing at $lnk" }
-          if ((Autostart) -ne "`"$exe`"") { throw "unexpected Run value: '$(Autostart)'" }
-          Write-Host "Installed: $exe, shortcut, autostart"
+          # 1. For everyone: Program Files (silent installs need ALLUSERS=1;
+          # without it they install for the current user only).
+          Msi "/i `"$msi`" ALLUSERS=1 /qn /l*v msi.log"
+          if (-not (Test-Path $machineExe)) { throw "knockblock.exe not installed at $machineExe" }
+          if (-not (Test-Path $machineLnk)) { throw "Start menu shortcut missing at $machineLnk" }
+          if ((Autostart) -ne "`"$machineExe`"") { throw "unexpected Run value: '$(Autostart)'" }
+          Write-Host "Installed for everyone: $machineExe, shortcut, autostart"
 
           # The installed app starts, stays up, and logs its memory use
           # (CLAUDE.md §2.1). No device exists here, so it keeps retrying.
-          # An existing config file skips the first-start settings page, so
-          # no browser opens and the number is the idle tray alone.
-          $cfgDir = Join-Path $env:APPDATA 'KnockBlock'
-          New-Item -ItemType Directory -Force $cfgDir | Out-Null
-          Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
-          $log = Join-Path $env:LOCALAPPDATA 'KnockBlock\logs\knockblock.log'
-          $app = Start-Process $exe -ArgumentList '-debug-mem','3s','-debug' -PassThru
+          $app = Start-Process $machineExe -ArgumentList '-debug-mem','3s','-debug' -PassThru
           Start-Sleep -Seconds 15
           if ($app.HasExited) { Get-Content $log -ErrorAction SilentlyContinue; throw "knockblock.exe exited early (code $($app.ExitCode))" }
-          Get-Content $log
           $mem = Select-String -Path $log -Pattern 'private_working_set_kib=(\d+)' | Select-Object -Last 1
-          if (-not $mem) { throw "no memory statistics in the log" }
+          if (-not $mem) { Get-Content $log; throw "no memory statistics in the log" }
           $kib = [int]$mem.Matches[0].Groups[1].Value
           Write-Host "Idle private working set: $kib KiB (target <= 15360, ceiling 20480)"
           if ($kib -gt 20480) { throw "private working set $kib KiB exceeds the 20 MB ceiling" }
           # A second start must exit at once (single instance).
-          $second = Start-Process $exe -PassThru -Wait
+          $second = Start-Process $machineExe -PassThru
+          Wait-Bounded $second 60 'second instance'
           if ($second.ExitCode -ne 0) { throw "second instance exit code $($second.ExitCode)" }
           Stop-Process -Id $app.Id
 
@@ -189,7 +237,9 @@ jobs:
           foreach ($lang in 'en', 'it') {
             Set-Content -Path (Join-Path $cfgDir 'config.json') -Value "{`"language`": `"$lang`"}"
             $png = Join-Path (Resolve-Path screenshots) "settings-$lang.png"
-            $p = Start-Process $exe -ArgumentList '-settings-smoke', "`"$png`"" -PassThru -Wait
+            Write-Host "==> settings window ($lang)"
+            $p = Start-Process $machineExe -ArgumentList '-settings-smoke', "`"$png`"" -PassThru
+            Wait-Bounded $p 120 "settings window ($lang)"
             Select-String -Path $log -Pattern 'settings smoke test|private_working_set' | Select-Object -Last 2 | ForEach-Object { $_.Line }
             if ($p.ExitCode -ne 0) { Get-Content $log -Tail 20; throw "settings window ($lang) failed: exit code $($p.ExitCode)" }
             foreach ($tab in 1..4) {
@@ -204,16 +254,36 @@ jobs:
           Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
 
           Msi "/x `"$msi`" /qn /l*v msi.log"
-          if (Test-Path $exe) { throw "knockblock.exe left after uninstall" }
+          if (Test-Path $machineExe) { throw "knockblock.exe left after uninstall" }
           if (Autostart) { throw "Run value left after uninstall" }
           Write-Host "Uninstalled cleanly"
 
-          # AUTOSTART=0 skips the Run value.
+          # 2. For the current user only, without autostart.
           Msi "/i `"$msi`" AUTOSTART=0 /qn /l*v msi.log"
-          if (-not (Test-Path $exe)) { throw "knockblock.exe not installed" }
+          if (-not (Test-Path $userExe)) { throw "knockblock.exe not installed at $userExe" }
+          if (-not (Test-Path $userLnk)) { throw "Start menu shortcut missing at $userLnk" }
           if (Autostart) { throw "Run value written despite AUTOSTART=0" }
           Msi "/x `"$msi`" /qn /l*v msi.log"
-          Write-Host "AUTOSTART=0 respected"
+          if (Test-Path $userExe) { throw "knockblock.exe left after the per-user uninstall" }
+          Write-Host "Per-user install and AUTOSTART=0 respected"
+
+          # 3. Upgrade while the app runs: the setup closes it (it reports
+          # offline and quits) and Restart Manager starts the new version.
+          Msi "/i `"$old`" ALLUSERS=1 /qn /l*v msi.log"
+          Start-Process $machineExe | Out-Null
+          Start-Sleep -Seconds 5
+          if (-not (Running)) { throw "0.0.1 did not start" }
+          Msi "/i `"$msi`" ALLUSERS=1 /qn /l*v msi.log"
+          Start-Sleep -Seconds 10
+          Select-String -Path $log -Pattern 'closing at Windows|starting version' | Select-Object -Last 4 | ForEach-Object { $_.Line }
+          if (-not (Select-String -Path $log -Pattern 'closing at Windows.*update=true')) { throw "the running app was not closed for the update" }
+          $p = Running
+          if (-not $p) { Write-Host "::warning::the app was not restarted after the update" }
+          elseif ((Get-Item $p.Path).VersionInfo.ProductVersion -notlike "$version*") { throw "running version $((Get-Item $p.Path).VersionInfo.ProductVersion), want $version" }
+          else { Write-Host "Updated and restarted: $version" }
+          Get-Process knockblock -ErrorAction SilentlyContinue | Stop-Process
+          Msi "/x `"$msi`" /qn /l*v msi.log"
+          Write-Host "Upgrade test done"
 
       - uses: actions/upload-artifact@v4
         if: always()

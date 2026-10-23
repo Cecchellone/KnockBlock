@@ -7,7 +7,7 @@ KnockBlock is a small status light that hangs outside your room and tells everyo
 ## Getting started
 
 1. **Flash the light.** Download `knockblock-<version>.esphomebundle.tar.gz` from the [latest release](https://github.com/Cecchellone/KnockBlock/releases/latest), extract it, put your Wi-Fi and a new API key (`openssl rand -base64 32`) in `secrets.yaml`, and run `esphome run knockblock.yaml` with the board on USB. Using the ESPHome dashboard or Home Assistant instead? See [the remote package](#installing-the-firmware-from-the-esphome-dashboard--home-assistant).
-2. **Install the PC app.** Run `KnockBlock-<version>.msi` (no administrator rights needed). On first start it opens its settings window.
+2. **Install the PC app.** Run `KnockBlock-<version>.msi`: choose *for everyone* (Program Files, asks for administrator rights) or *only for me* (no rights needed), confirm the folder, install. Leave "Start KnockBlock" checked at the end: on first start it opens its settings window.
 3. **Connect them.** Paste the same API key, check the device address (default `knockblock.local`), press **Test connection**, then **Save**. The tray icon turns green and the light shows "Free".
 
 From then on, the light follows your microphone and webcam. Several PCs can drive the same light; the busiest status wins. See [`docs/presence.md`](docs/presence.md).
@@ -45,7 +45,7 @@ From then on, the light follows your microphone and webcam. Several PCs can driv
 | `firmware/` | ESPHome configuration for the device (and a `host` build for tests) |
 | `client/` | Go module with the Windows tray app |
 | `proto/` | ESPHome Native API protobuf files, pinned to the version in `proto/VERSION` |
-| `installer/` | MSI definition (built on Linux with wixl) |
+| `installer/` | MSI definition and its texts (WiX v5, built on Windows) |
 | `scripts/` | Checks, integration tests, release builds |
 | `docs/` | Protocol notes and contributor guides; [`releasing.md`](docs/releasing.md) for maintainers |
 
@@ -63,10 +63,10 @@ The required Go toolchain is pinned in `client/go.mod` and downloaded automatica
 
 Every merge into `main` publishes a new [release](https://github.com/Cecchellone/KnockBlock/releases) (the next patch version). Each one has:
 
-- `KnockBlock-<version>.msi`: the Windows tray app. Installs per user, with no administrator rights; `AUTOSTART=0` skips starting with Windows.
+- `KnockBlock-<version>.msi`: the Windows tray app. The setup (English or Italian, as Windows) installs for everyone or only for you, in a folder you can change. Updating closes a running KnockBlock, tells you, and starts it again.
 - `knockblock-<version>.esphomebundle.tar.gz`: the firmware configuration. Extract it, fill in `secrets.yaml`, then run `esphome run knockblock.yaml`.
 
-Details are in [`docs/release-notes.md`](docs/release-notes.md). Build them locally with `scripts/build-msi.sh` (needs `wixl` and `msitools`) and `scripts/build-firmware-bundle.sh` (needs ESPHome).
+Details are in [`docs/release-notes.md`](docs/release-notes.md). Build them locally with `scripts/build-msi.ps1` (on Windows; needs the WiX v5 .NET tool, see the script) and `scripts/build-firmware-bundle.sh` (needs ESPHome).
 
 ### The tray app
 
@@ -76,7 +76,7 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 - The **menu** shows the status and the connection. You can force "Free" or "Do not disturb" ("Automatic" goes back to detection), open the settings, toggle "Start with Windows", or quit.
 - **Settings…** opens the settings window, in four tabs: **Connection** (address, port, encryption key, Test connection), **Light** (the light's own settings, read from it and saved on it, the same ones Home Assistant shows: display language, orientation, display brightness, LED brightness when the firmware has it, privacy), **This PC** (PC name, language, app names, doorbell, notifications, Start with Windows) and **Apps** (ignored apps, custom names). Ctrl+Tab switches tabs. Saving does not drop the connection unless the address or the key changed. Everything is in your language (English or Italian; English is the fallback). The window takes no memory when closed.
 - The settings are stored in `%APPDATA%\KnockBlock\config.json`; the encryption key is encrypted with Windows DPAPI and never shown again once saved. The app reloads the file as soon as it changes. If you edit the file by hand, you can put the key in plain text as `"key": "…"`: the app encrypts it on the next start and removes the plain copy.
-- **Doorbell**: when someone presses the light's button, every PC running KnockBlock plays a chime and shows "Someone is at your door", also during calls (turn it off in the settings). The light shows a bell for a few seconds.
+- **Doorbell**: when someone presses the light's button, every PC running KnockBlock shows a Windows notification, "Someone is at your door", also during calls (turn it off in the settings). The light shows a bell for a few seconds.
 - **Logs** go to `%LOCALAPPDATA%\KnockBlock\logs\knockblock.log`. Run `knockblock.exe -debug -debug-mem 30s` to log details and memory use.
 
 ### Trying the PC side without the tray app

@@ -38,3 +38,12 @@ settings ("Device display language").
 The app finds the new file by itself. It uses the language chosen in the
 settings, otherwise the Windows display language (`it-IT` matches `it`),
 otherwise English. A key missing from a translation falls back to English.
+
+## Installer
+
+1. Copy `installer/en-US.wxl` to `installer/<culture>.wxl` (e.g. `de-DE`),
+   translate the strings and set `Language` to the language's LCID (e.g.
+   1031). The standard setup pages come translated with WiX.
+2. Add the culture and its LCID to `$languages` in `scripts/build-msi.ps1`.
+
+The setup then shows that language when it is the Windows display language.

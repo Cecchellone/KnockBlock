@@ -30,12 +30,18 @@ changes per minor version.
 
 ### PC app (Windows)
 
-- The doorbell rings on every connected PC: a chime and a notification,
+- The doorbell rings on every connected PC: a standard Windows notification,
   also during calls. It can be turned off in the settings.
 - Settings for the light's display orientation and for the doorbell.
 - `knockctl ring` and `knockctl flip on|off` for trying them out.
 - The settings are a native Windows window instead of a page in the
   browser. It exists only while open.
+- New setup: choose for everyone (Program Files) or only for you, the
+  folder, then confirm; "Start KnockBlock" at the end. English and Italian.
+- Updating closes the running app (it says it is updating and tells the
+  light it goes offline) and starts it again; the new version says it was
+  updated.
+- Notifications are plain Windows notifications, without a custom sound.
 - The settings window has tabs: Connection, Light, This PC, Apps. The
   Light tab reads the light's own settings (display language, orientation,
   display brightness, LED brightness, privacy) and saves them on the light.

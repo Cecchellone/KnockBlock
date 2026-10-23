@@ -2,7 +2,6 @@ package tray
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -274,25 +273,5 @@ func TestEngine(t *testing.T) {
 	e.Stop()
 	if conn.last() != "LAPTOP offline " {
 		t.Errorf("stop did not report offline: %q", conn.last())
-	}
-}
-
-func TestChime(t *testing.T) {
-	w := Chime()
-	if string(w[0:4]) != "RIFF" || string(w[8:16]) != "WAVEfmt " || string(w[36:40]) != "data" {
-		t.Fatalf("bad header % x", w[:44])
-	}
-	if got := binary.LittleEndian.Uint32(w[40:]); int(got) != len(w)-44 {
-		t.Fatalf("data size %d, file has %d", got, len(w)-44)
-	}
-	if len(w) > 24<<10 {
-		t.Errorf("chime is %d bytes", len(w))
-	}
-	lo, hi := byte(255), byte(0)
-	for _, b := range w[44:] {
-		lo, hi = min(lo, b), max(hi, b)
-	}
-	if lo < 10 || hi > 245 || hi-lo < 100 {
-		t.Errorf("samples in [%d, %d]: clipped or silent", lo, hi)
 	}
 }

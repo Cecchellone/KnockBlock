@@ -26,6 +26,8 @@
   "notify.old_firmware": "The light's firmware is too old for this app. Update it with ESPHome.",
   "notify.doorbell_title": "Doorbell",
   "notify.doorbell": "Someone is at your door.",
+  "notify.updating": "Updating KnockBlock: it will start again in a moment.",
+  "notify.updated": "KnockBlock was updated to version {version}.",
   "lang.name": "English",
   "settings.title": "KnockBlock settings",
   "settings.device": "Light",

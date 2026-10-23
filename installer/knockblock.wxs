@@ -1,84 +1,202 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Windows Installer package for the KnockBlock tray app. Built on Linux with
-  wixl (msitools), which reads this WiX 3 subset; see scripts/build-msi.sh.
+  Windows Installer package for the KnockBlock tray app, built with WiX v5 on
+  Windows (scripts/build-msi.ps1; the release workflow runs it).
 
-  - Per-user install into %LOCALAPPDATA%\Programs\KnockBlock: no
-    administrator rights needed, like the app's own settings (HKCU, %APPDATA%).
-  - Start menu shortcut.
-  - "Start with Windows" is on by default (the same HKCU Run value the tray
-    menu toggles, so uninstalling removes it). Turn it off with
-    `msiexec /i KnockBlock.msi AUTOSTART=0`.
-  - Upgrades replace the installed version; downgrades are refused.
+  The setup asks, in the Windows display language (en-US, it-IT; see
+  installer/*.wxl):
+    1. welcome;
+    2. for everyone (Program Files, administrator rights, the default) or
+       only for the current user (%LOCALAPPDATA%\Programs, no rights needed);
+    3. the folder (changeable);
+    4. confirmation (Install);
+    5. progress; a running KnockBlock is closed first (Restart Manager), shows
+       "updating" and is restarted afterwards;
+    6. finish, with "Start KnockBlock" (checked).
+  It needs the WixToolset.UI.wixext and WixToolset.Util.wixext extensions.
 
-  Never change UpgradeCode: Windows uses it to find older versions to upgrade.
+  Silent installs: `msiexec /i KnockBlock.msi /qn` installs for the current
+  user; add `ALLUSERS=1` (as administrator) for everyone,
+  `APPLICATIONFOLDER=…` for another folder and `AUTOSTART=0` to not start
+  with Windows.
+
+  Upgrades replace an older version installed the same way (for everyone or
+  for the current user); downgrades are refused. Never change UpgradeCode:
+  Windows uses it to find older versions.
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*"
-           Name="KnockBlock"
-           Language="1033"
-           Version="$(var.Version)"
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="KnockBlock"
            Manufacturer="KnockBlock"
-           UpgradeCode="4a80fc1b-7f12-462a-a649-e7affdf26326">
-    <Package InstallerVersion="500"
-             Compressed="yes"
-             InstallScope="perUser"
-             Description="KnockBlock tray app"
-             Comments="Do-not-disturb light for your door: tells the device when the microphone or webcam is in use." />
+           Version="$(var.Version)"
+           UpgradeCode="4a80fc1b-7f12-462a-a649-e7affdf26326"
+           Language="!(loc.Language)"
+           Scope="perUserOrMachine"
+           Compressed="yes">
+    <SummaryInformation Description="!(loc.Description)" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of KnockBlock is already installed." />
-    <Media Id="1" Cabinet="knockblock.cab" EmbedCab="yes" />
+    <MajorUpgrade DowngradeErrorMessage="!(loc.DowngradeError)" />
+    <MediaTemplate EmbedCab="yes" />
 
     <!-- 1 = start with Windows (default), 0 = do not. -->
     <Property Id="AUTOSTART" Value="1" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/Cecchellone/KnockBlock" />
-    <!-- Icon for "Installed apps" and the Start menu (from internal/icon). -->
     <Icon Id="KnockBlock.ico" SourceFile="$(var.Icon)" />
     <Property Id="ARPPRODUCTICON" Value="KnockBlock.ico" />
 
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="LocalAppDataFolder">
-        <Directory Id="UserProgramsDir" Name="Programs">
-          <Directory Id="INSTALLDIR" Name="KnockBlock">
-            <!-- Per-user components use an HKCU value as key path. -->
-            <Component Id="App" Guid="2e5f9a83-79a8-462d-b1bb-9c968786d939">
-              <File Id="KnockBlockExe" Name="knockblock.exe" Source="$(var.Exe)" />
-              <File Id="License" Name="LICENSE.txt" Source="$(var.License)" />
-              <RegistryValue Root="HKCU" Key="Software\KnockBlock" Name="InstallDir"
-                             Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
-              <!-- Only our folder: %LOCALAPPDATA%\Programs is shared. -->
-              <RemoveFolder Id="RemoveInstallDir" On="uninstall" />
-            </Component>
-          </Directory>
-        </Directory>
-      </Directory>
+    <!-- Close a running KnockBlock before replacing it: Restart Manager asks
+         it to end (it shows "updating", reports itself offline and quits,
+         see client/internal/endsession) and restarts it after the update.
+         The setup's "files in use" page offers to close it; silent installs
+         close it on their own. -->
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="0" />
+    <Property Id="MSIRMSHUTDOWN" Value="0" />
 
-      <Directory Id="ProgramMenuFolder">
-        <Component Id="StartMenuShortcut" Guid="fc1f531b-7543-425a-b9c3-094cf5c66530">
-          <Shortcut Id="StartMenuKnockBlock" Name="KnockBlock" Icon="KnockBlock.ico"
-                    Target="[INSTALLDIR]knockblock.exe" WorkingDirectory="INSTALLDIR" />
-          <RegistryValue Root="HKCU" Key="Software\KnockBlock" Name="StartMenuShortcut"
-                         Type="integer" Value="1" KeyPath="yes" />
+    <!-- Folders: APPLICATIONFOLDER is set from the scope chosen in the UI
+         (InstallScopeDlg) or on the command line. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="KnockBlock">
+        <Component Id="App" Guid="6a3c7f2e-0d3b-4f0e-9a52-6e1f1b9d5a10">
+          <File Id="KnockBlockExe" Name="knockblock.exe" Source="$(var.Exe)" KeyPath="yes" />
+          <File Id="License" Name="LICENSE.txt" Source="$(var.License)" />
+          <RemoveFolder Id="RemoveApplicationFolder" On="uninstall" />
         </Component>
       </Directory>
-    </Directory>
+    </StandardDirectory>
 
-    <DirectoryRef Id="INSTALLDIR">
-      <Component Id="Autostart" Guid="0a989b33-159f-4c8f-90c3-6c2a1e30562c">
-        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="KnockBlock"
-                       Type="string" Value="&quot;[INSTALLDIR]knockblock.exe&quot;" KeyPath="yes" />
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="b8f2a0d1-3c5e-4a7b-9e21-0f6d4c8b2a37">
+        <Shortcut Id="StartMenuKnockBlock" Name="KnockBlock" Icon="KnockBlock.ico"
+                  Target="[APPLICATIONFOLDER]knockblock.exe" WorkingDirectory="APPLICATIONFOLDER" />
+        <RegistryValue Root="HKMU" Key="Software\KnockBlock" Name="StartMenuShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
       </Component>
-    </DirectoryRef>
+    </StandardDirectory>
+
+    <!-- The same HKCU Run value the tray menu toggles, so it follows the user
+         who installed and uninstalling removes it. -->
+    <Component Id="Autostart" Directory="APPLICATIONFOLDER" Guid="d4e7b1a9-58c2-4f63-8b0e-2a9c6f17e5b4"
+               Condition="AUTOSTART &lt;&gt; &quot;0&quot;">
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="KnockBlock"
+                     Type="string" Value="&quot;[APPLICATIONFOLDER]knockblock.exe&quot;" KeyPath="yes" />
+    </Component>
 
     <Feature Id="Main" Title="KnockBlock" Level="1">
       <ComponentRef Id="App" />
       <ComponentRef Id="StartMenuShortcut" />
-    </Feature>
-    <!-- Installed unless AUTOSTART=0. wixl has no feature conditions, so
-         scripts/build-msi.sh adds that row to the MSI's Condition table
-         (installer/condition.idt). -->
-    <Feature Id="StartWithWindows" Title="Start with Windows" Level="1">
       <ComponentRef Id="Autostart" />
     </Feature>
-  </Product>
+
+    <!-- Finish page: "Start KnockBlock", checked. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="!(loc.LaunchApp)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="[#KnockBlockExe]" />
+    <CustomAction Id="LaunchKnockBlock" BinaryRef="Wix4UtilCA_X64" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
+
+    <UIRef Id="KnockBlockUI" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+  </Package>
+
+  <!--
+    The dialog flow: WixUI_Advanced's scope and folder pages, without its
+    "Install now" shortcut and license page, so the folder and the
+    confirmation always show. Adapted from WiX v5
+    src/ext/UI/wixlib/WixUI_Advanced.wxs.
+  -->
+  <Fragment>
+    <WixVariable Id="WixUISupportPerUser" Value="1" />
+    <WixVariable Id="WixUISupportPerMachine" Value="1" />
+    <Property Id="ApplicationFolderName" Value="KnockBlock" />
+    <!-- Default: for everyone. -->
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+
+    <CustomAction Id="KBSetDefaultPerUserFolder" Property="WixPerUserFolder" Value="[LocalAppDataFolder]Programs\[ApplicationFolderName]" Execute="immediate" />
+    <CustomAction Id="KBSetDefaultPerMachineFolder" Property="WixPerMachineFolder" Value="[ProgramFiles64Folder][ApplicationFolderName]" Execute="immediate" />
+    <CustomAction Id="KBSetPerUserFolder" Property="APPLICATIONFOLDER" Value="[WixPerUserFolder]" Execute="immediate" />
+    <CustomAction Id="KBSetPerMachineFolder" Property="APPLICATIONFOLDER" Value="[WixPerMachineFolder]" Execute="immediate" />
+
+    <InstallExecuteSequence>
+      <Custom Action="KBSetDefaultPerUserFolder" Before="CostFinalize" />
+      <Custom Action="KBSetDefaultPerMachineFolder" After="KBSetDefaultPerUserFolder" />
+      <Custom Action="KBSetPerUserFolder" After="KBSetDefaultPerMachineFolder" Condition="ACTION=&quot;INSTALL&quot; AND APPLICATIONFOLDER=&quot;&quot; AND (ALLUSERS=&quot;&quot; OR (ALLUSERS=2 AND (NOT Privileged)))" />
+      <Custom Action="KBSetPerMachineFolder" After="KBSetPerUserFolder" Condition="ACTION=&quot;INSTALL&quot; AND APPLICATIONFOLDER=&quot;&quot; AND (ALLUSERS=1 OR (ALLUSERS=2 AND Privileged))" />
+    </InstallExecuteSequence>
+    <InstallUISequence>
+      <Custom Action="KBSetDefaultPerUserFolder" Before="CostFinalize" />
+      <Custom Action="KBSetDefaultPerMachineFolder" After="KBSetDefaultPerUserFolder" />
+      <Custom Action="KBSetPerUserFolder" After="KBSetDefaultPerMachineFolder" Condition="ACTION=&quot;INSTALL&quot; AND APPLICATIONFOLDER=&quot;&quot; AND (ALLUSERS=&quot;&quot; OR (ALLUSERS=2 AND (NOT Privileged)))" />
+      <Custom Action="KBSetPerMachineFolder" After="KBSetPerUserFolder" Condition="ACTION=&quot;INSTALL&quot; AND APPLICATIONFOLDER=&quot;&quot; AND (ALLUSERS=1 OR (ALLUSERS=2 AND Privileged))" />
+    </InstallUISequence>
+
+    <UI Id="KnockBlockUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Normal_Size)" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Bigger_Size)" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Title_Size)" Bold="yes" />
+      <TextStyle Id="WixUI_Font_Emphasized" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Emphasized_Size)" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="WelcomeDlg" />
+      <DialogRef Id="InstallScopeDlg" />
+      <DialogRef Id="InstallDirDlg" />
+      <DialogRef Id="InvalidDirDlg" />
+      <DialogRef Id="VerifyReadyDlg" />
+      <DialogRef Id="MaintenanceWelcomeDlg" />
+      <DialogRef Id="MaintenanceTypeDlg" />
+      <DialogRef Id="ExitDialog" />
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchKnockBlock" Order="1"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+      <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath_X64" Order="1" Condition="NOT WIXUI_DONTVALIDATEPATH" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="2" Condition="WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+
+      <!-- 1. Welcome → 2. scope -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallScopeDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <!-- 2. Scope → 3. folder -->
+      <Publish Dialog="InstallScopeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="WixAppFolder" Value="WixPerUserFolder" Order="1" Condition="NOT Privileged" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="ALLUSERS" Value="{}" Order="2" Condition="WixAppFolder = &quot;WixPerUserFolder&quot;" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="ALLUSERS" Value="1" Order="3" Condition="WixAppFolder = &quot;WixPerMachineFolder&quot;" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="APPLICATIONFOLDER" Value="[WixPerUserFolder]" Order="4" Condition="WixAppFolder = &quot;WixPerUserFolder&quot;" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="APPLICATIONFOLDER" Value="[WixPerMachineFolder]" Order="5" Condition="WixAppFolder = &quot;WixPerMachineFolder&quot;" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="6" />
+
+      <!-- 3. Folder → 4. confirm -->
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="InstallScopeDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="WixUIValidatePath_X64" Order="2" Condition="NOT WIXUI_DONTVALIDATEPATH" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidDirDlg" Order="3" Condition="NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4" Condition="WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID=&quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+
+      <!-- 4. Confirm (Install), or back -->
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3" Condition="Installed AND PATCH" />
+
+      <!-- Repair / remove from "Installed apps" -->
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+    </UI>
+
+    <Property Id="WIXUI_INSTALLDIR" Value="APPLICATIONFOLDER" />
+    <CustomActionRef Id="WixUIValidatePath_X64" />
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
 </Wix>

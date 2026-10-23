@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English texts of the KnockBlock setup. The setup's standard pages come
+     from WiX's own translations; these are KnockBlock's. -->
+<WixLocalization Culture="en-US" Codepage="1252" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="Language" Value="1033" />
+  <String Id="Description" Value="KnockBlock tray app: tells your door light when the microphone or webcam is in use." />
+  <String Id="DowngradeError" Value="A newer version of KnockBlock is already installed." />
+  <String Id="LaunchApp" Value="Start KnockBlock" />
+</WixLocalization>

@@ -1,4 +1,0 @@
-Feature_	Level	Condition
-s38	i2	S255
-Condition	Feature_	Level
-StartWithWindows	0	AUTOSTART = "0"
