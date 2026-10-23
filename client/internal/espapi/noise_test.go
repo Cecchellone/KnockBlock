@@ -164,7 +164,7 @@ func TestDialNoise(t *testing.T) {
 			t.Fatalf("MAC %q", c.MACAddress())
 		}
 		ents, err := c.ListEntities(context.Background())
-		if err != nil || len(ents) != 5 {
+		if err != nil || len(ents) != 8 {
 			t.Fatalf("ListEntities: %v, %d entities", err, len(ents))
 		}
 		if err := c.SetSelect(context.Background(), keyStatus, "dnd"); err != nil {

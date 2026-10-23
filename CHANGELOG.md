@@ -5,9 +5,36 @@ User-visible changes per release. The format follows
 [Semantic Versioning](https://semver.org/). How to cut a release:
 [`docs/releasing.md`](docs/releasing.md).
 
+Every merge into `main` is released automatically as a new patch version;
+the release page lists the merged PRs. This file collects the notable
+changes per minor version.
+
 ## [Unreleased]
 
-First release, planned as 0.1.0.
+### Release
+
+- Every merge into `main` publishes a GitHub release with the MSI and the
+  firmware bundle, as the next patch version.
+
+### Light (firmware)
+
+- Doorbell: the board's BOOT button (or any GPIO, `doorbell_pin`) and the
+  `Ring doorbell` button fire a `doorbell` event. The display shows a bell
+  and the LED blinks white. Rings closer than 3 s count as one.
+- `Flip display` switch turns the picture upside down; kept across reboots.
+
+### PC app (Windows)
+
+- The doorbell rings on every connected PC: a chime and a notification,
+  also during calls. It can be turned off in the settings.
+- Settings for the light's display orientation and for the doorbell.
+- `knockctl ring` and `knockctl flip on|off` for trying them out.
+- The settings are a native Windows window instead of a page in the
+  browser. It exists only while open.
+
+## [0.1.0]
+
+First release.
 
 ### Light (firmware)
 

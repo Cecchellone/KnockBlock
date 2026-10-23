@@ -4,6 +4,9 @@
 //
 //	knockblock [-debug] [-debug-mem 30s]
 //
+// -settings-smoke FILE is for the release smoke test: it opens the settings
+// window alone, saves a PNG screenshot of it to FILE, closes it and exits.
+//
 // It logs to %LOCALAPPDATA%\KnockBlock\logs\knockblock.log and reads
 // %APPDATA%\KnockBlock\config.json.
 package main
@@ -12,16 +15,25 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
+type options struct {
+	debug         bool
+	debugMem      time.Duration
+	settingsSmoke string
+}
+
 func main() {
-	debug := flag.Bool("debug", false, "debug logging")
-	debugMem := flag.Duration("debug-mem", 0, "log memory statistics at this interval (0 = off)")
+	var o options
+	flag.BoolVar(&o.debug, "debug", false, "debug logging")
+	flag.DurationVar(&o.debugMem, "debug-mem", 0, "log memory statistics at this interval (0 = off)")
+	flag.StringVar(&o.settingsSmoke, "settings-smoke", "", "open the settings window, save a screenshot to this PNG file, and exit")
 	flag.Parse()
-	if err := run(*debug, *debugMem); err != nil {
+	if err := run(o); err != nil {
 		fmt.Fprintln(os.Stderr, "knockblock:", err)
 		os.Exit(1)
 	}

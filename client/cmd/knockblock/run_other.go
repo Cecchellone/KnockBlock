@@ -2,10 +2,6 @@
 
 package main
 
-import (
-	"time"
+import "github.com/Cecchellone/KnockBlock/client/internal/tray"
 
-	"github.com/Cecchellone/KnockBlock/client/internal/tray"
-)
-
-func run(bool, time.Duration) error { return tray.Run(tray.Options{Version: version}) }
+func run(options) error { return tray.Run(tray.Options{Version: version}) }

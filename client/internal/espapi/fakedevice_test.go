@@ -19,6 +19,9 @@ const (
 	keyHeartbeat   = 103
 	keyStatusLabel = 104
 	keyReport      = 105
+	keyFlip        = 106
+	keyDoorbell    = 107
+	keyRing        = 108
 )
 
 // fakeDevice is a minimal ESPHome device for tests: it speaks the server
@@ -38,6 +41,7 @@ type fakeDevice struct {
 	mu        sync.Mutex
 	status    string
 	language  string
+	flip      bool
 	presses   int
 	pings     int
 	pongs     int
@@ -158,14 +162,25 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 			{Name: "status", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_STRING},
 			{Name: "app", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_STRING},
 		}})
-		d.send(&pb.ListEntitiesSwitchResponse{ObjectId: "other", Key: 999, Name: "Other"}) // not handled
+		d.send(&pb.ListEntitiesSwitchResponse{ObjectId: "flip_display", Key: keyFlip, Name: "Flip display"})
+		d.send(&pb.ListEntitiesEventResponse{ObjectId: "doorbell", Key: keyDoorbell, Name: "Doorbell", EventTypes: []string{"ring"}})
+		d.send(&pb.ListEntitiesButtonResponse{ObjectId: "ring_doorbell", Key: keyRing, Name: "Ring doorbell"})
+		d.send(&pb.ListEntitiesSensorResponse{ObjectId: "other", Key: 999, Name: "Other"}) // not handled
 		d.send(&pb.ListEntitiesDoneResponse{})
 	case *pb.SubscribeStatesRequest:
 		d.mu.Lock()
-		status, language := d.status, d.language
+		status, language, flip := d.status, d.language, d.flip
 		d.mu.Unlock()
 		d.send(&pb.SelectStateResponse{Key: keyStatus, State: status})
 		d.send(&pb.SelectStateResponse{Key: keyLanguage, State: language})
+		d.send(&pb.SwitchStateResponse{Key: keyFlip, State: flip})
+	case *pb.SwitchCommandRequest:
+		if m.GetKey() == keyFlip {
+			d.mu.Lock()
+			d.flip = m.GetState()
+			d.mu.Unlock()
+			d.send(&pb.SwitchStateResponse{Key: keyFlip, State: m.GetState()})
+		}
 	case *pb.SelectCommandRequest:
 		d.mu.Lock()
 		switch m.GetKey() {
@@ -192,6 +207,9 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 			d.presses++
 		}
 		d.mu.Unlock()
+		if m.GetKey() == keyRing {
+			d.send(&pb.EventResponse{Key: keyDoorbell, EventType: "ring"})
+		}
 	case *pb.PingRequest:
 		d.mu.Lock()
 		d.pings++

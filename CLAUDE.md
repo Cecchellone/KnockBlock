@@ -24,7 +24,7 @@ These three requirements drive every design decision. If a change conflicts with
 - Target: **≤ 15 MB private working set** for the tray app when idle (measured in Task Manager, "Memory" column). Treat 20 MB as a hard ceiling.
 - No GUI framework resident in memory. No Qt, no Fyne widgets, no WebView, no Electron.
 - The tray icon uses `fyne.io/systray` (pure Go on Windows, no CGO).
-- The settings UI is a small HTML page served by `net/http` on `127.0.0.1` **only while open**, opened in the user's default browser from the tray menu, and shut down after it closes or after a short inactivity timeout.
+- The settings UI is a **native window** (Win32 on Windows, built directly on `golang.org/x/sys/windows`, no GUI library), created **only while open** on its own thread and destroyed when closed. Its logic (form, validation, saving, connection test) lives in a portable model, so another OS only adds its own native view.
 - Build with `CGO_ENABLED=0`. Every new dependency must be justified in the PR description; prefer the standard library and `golang.org/x/...`.
 - Avoid per-tick allocations in the detection loop (reuse buffers, no fresh maps/slices every poll). Logs go to a rotating file, never kept in memory.
 - Add a simple way to check memory (e.g. a debug flag that logs `runtime.MemStats` periodically) and report numbers in PRs that touch the runtime path.
@@ -81,7 +81,7 @@ These three requirements drive every design decision. If a change conflicts with
   internal/agent/               # presence loop (detect -> status -> link), shared by tray and knockctl agent
   internal/config/              # config load/save, secret protection
   internal/i18n/                # locale loading, language detection, fallback
-  internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
+  internal/settingsui/          # settings window: portable model + native view per OS (Win32)
   internal/tray/                # tray icon, menu, icons per status
   internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
   internal/logfile/             # size-rotated log file (logs never kept in memory)
@@ -109,6 +109,8 @@ These three requirements drive every design decision. If a change conflicts with
   - `text_sensor` **`active_app`**, **`active_pc`** — app and PC causing the current status; **`status_label`** — the localized label shown.
   - `button` **`heartbeat`** — keeps the manual source alive.
   - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
+  - `switch` **`flip_display`** (board) — rotates the picture by 180° (restored across reboots).
+  - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a notification with a chime.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
 - **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `dnd` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
 - `api:` with `encryption: key: !secret api_encryption_key` and **`reboot_timeout: 0s`** (otherwise the device reboots in a loop when neither the PC nor Home Assistant is connected).
@@ -155,7 +157,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - Tray icon colour reflects status; tooltip shows localized status and connection state.
 - Menu: current status, override options, "Open settings", "Start with Windows" toggle, "Quit".
 - Notifications: only for things that matter (device unreachable for several minutes), and they can be disabled.
-- Settings page: device host (default `knockblock.local`), port, encryption key, language (auto / English / Italian / …), device display language, ignore list, connection test. Protect it with a random per-session token in the URL; bind only to `127.0.0.1`.
+- Settings window (native): device host (default `knockblock.local`), port, encryption key, language (auto / English / Italian / …), device display language and orientation, doorbell, ignore list, app names, connection test. It opens by itself on first start.
 
 ### 5.5 Config and secrets
 
@@ -168,7 +170,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
 - Embed icon and version info in the executable: `scripts/winres.sh` draws the icon with `internal/icon` and writes `cmd/knockblock/rsrc_windows_amd64.syso` with go-winres (pinned, run via `go run`).
 - Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
-- Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both to a GitHub release on tags `vX.Y.Z`.
+- Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both as a GitHub release on every push to `main` (next patch after the latest `vX.Y.Z` tag; the release creates the tag) and on tags `vX.Y.Z` pushed by hand (new minor/major series).
 
 ## 6. Internationalization
 
@@ -203,8 +205,8 @@ Work in small PRs, one milestone (or part of one) at a time. Each milestone has 
 4. **Noise encryption** — handshake + encrypted transport. Accept: same integration test passes with an encryption key; unit tests with fixed vectors.
 5. **Detection + status logic** — registry reader, ignore list, state machine, fake for tests. Accept: unit tests for the state machine; manual test notes on Windows.
 6. **Tray app** — systray, menu, reconnect/backoff, sleep/resume handling, heartbeat, i18n wired in. Accept: idle memory ≤ 15 MB reported in the PR.
-7. **Settings page + config** — on-demand localhost UI, DPAPI secret storage, autostart toggle, localized.
-8. **Installer + release** — MSI, firmware bundle, GitHub Actions release; release checklist in `docs/releasing.md`, changelog in `CHANGELOG.md`. Tags are pushed by the owner after the hardware checks.
+7. **Settings window + config** — native settings window (replaced the first localhost page), DPAPI secret storage, autostart toggle, localized.
+8. **Installer + release** — MSI, firmware bundle, GitHub Actions release; release checklist in `docs/releasing.md`, changelog in `CHANGELOG.md`. Every merge into `main` is released as a patch; the owner tags minor/major versions after the hardware checks.
 
 ## 8. Environment notes for cloud sessions
 

@@ -110,8 +110,8 @@ func TestListEntities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ents) != 5 {
-		t.Fatalf("got %d entities, want 5 (switch skipped): %+v", len(ents), ents)
+	if len(ents) != 8 {
+		t.Fatalf("got %d entities, want 8 (sensor skipped): %+v", len(ents), ents)
 	}
 	tests := []struct {
 		kind     EntityKind
@@ -123,6 +123,9 @@ func TestListEntities(t *testing.T) {
 		{KindButton, "heartbeat", keyHeartbeat},
 		{KindTextSensor, "status_label", keyStatusLabel},
 		{KindAction, "report_presence", keyReport},
+		{KindSwitch, "flip_display", keyFlip},
+		{KindEvent, "doorbell", keyDoorbell},
+		{KindButton, "ring_doorbell", keyRing},
 	}
 	for _, tt := range tests {
 		e, ok := ents.Find(tt.kind, tt.objectID)
@@ -132,6 +135,9 @@ func TestListEntities(t *testing.T) {
 	}
 	if e, _ := ents.Find(KindSelect, "status"); len(e.Options) != 6 {
 		t.Errorf("status options = %v", e.Options)
+	}
+	if e, _ := ents.Find(KindEvent, "doorbell"); len(e.Options) != 1 || e.Options[0] != "ring" {
+		t.Errorf("doorbell event types = %v", e.Options)
 	}
 	// A second listing works too.
 	if _, err := c.ListEntities(context.Background()); err != nil {
@@ -159,6 +165,7 @@ func TestStatesAndCommands(t *testing.T) {
 	}
 	expect(keyStatus, "offline")
 	expect(keyLanguage, "en")
+	expect(keyFlip, "off")
 
 	ctx := context.Background()
 	if err := c.SetSelect(ctx, keyStatus, "call"); err != nil {
@@ -173,6 +180,15 @@ func TestStatesAndCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "button press", func() bool { _, _, presses, _, _ := d.snapshot(); return presses == 1 })
+	if err := c.SetSwitch(ctx, keyFlip, true); err != nil {
+		t.Fatal(err)
+	}
+	expect(keyFlip, "on")
+	// Events arrive as states carrying the event type.
+	if err := c.PressButton(ctx, keyRing); err != nil {
+		t.Fatal(err)
+	}
+	expect(keyDoorbell, "ring")
 	if status, language, _, _, _ := d.snapshot(); status != "call" || language != "it" {
 		t.Fatalf("device state %q %q", status, language)
 	}

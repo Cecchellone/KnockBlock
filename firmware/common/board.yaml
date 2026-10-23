@@ -14,18 +14,25 @@
 #   https://github.com/trianglesis/esp32-c6_LVGL (README).
 #   TODO(verify): confirm backlight GPIO22 and LED GPIO8 against the official
 #   wiki/schematic; waveshare.com was not reachable when this was written.
+# - Doorbell: the board's BOOT button, which on the ESP32-C6 is GPIO9 (a
+#   strapping pin: held at reset it enters download mode, which is harmless).
+#   TODO(verify): BOOT on GPIO9, active low with a pull-up, on the schematic.
 
 substitutions:
   # Defaults; override them in the including file.
   name: knockblock
   friendly_name: KnockBlock
+  # Button that rings the doorbell: the BOOT button by default. For an
+  # external push button, wire it between a free GPIO and GND and set the
+  # GPIO here.
+  doorbell_pin: GPIO9
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   project:
     name: cecchellone.knockblock
-    version: "0.1.0"
+    version: "0.1.0"  # project version; release builds set it
 
 esp32:
   variant: esp32c6
@@ -68,6 +75,11 @@ globals:
     type: Color
     initial_value: Color(0x30, 0x30, 0x30)
 
+  # True while the display shows the doorbell instead of the status.
+  - id: doorbell_shown
+    type: bool
+    initial_value: "false"
+
 font:
   # Must contain every character used by firmware/locales/*.yaml; the
   # knockblock_i18n component checks this at `esphome config` time. Extend
@@ -99,7 +111,7 @@ display:
   - platform: mipi_spi
     id: main_display
     model: WAVESHARE-ESP32-C6-LCD-1.47
-    # Landscape: 320x172.
+    # Landscape: 320x172. The flip_display switch turns it to 270.
     rotation: 90
     # Redrawn on every status change; the interval is only a safety net.
     update_interval: 60s
@@ -109,6 +121,23 @@ display:
       const int luma = (299 * bg.r + 587 * bg.g + 114 * bg.b) / 1000;
       const Color fg = luma > 150 ? Color::BLACK : Color::WHITE;
       it.fill(bg);
+
+      if (id(doorbell_shown)) {
+        // A bell, drawn with shapes so it needs no font or image.
+        const int x = it.get_width() / 2, y = it.get_height() / 2 - 4;
+        it.filled_circle(x, y - 46, 7, fg);                           // handle
+        it.filled_circle(x, y - 14, 34, fg);                          // dome
+        it.filled_rectangle(x - 34, y - 14, 69, 40, fg);              // body
+        it.filled_triangle(x - 34, y + 14, x - 52, y + 38, x - 34, y + 38, fg);
+        it.filled_triangle(x + 34, y + 14, x + 52, y + 38, x + 34, y + 38, fg);
+        it.filled_rectangle(x - 52, y + 32, 105, 8, fg);              // rim
+        it.filled_circle(x, y + 50, 10, fg);                          // clapper
+        for (int i = 0; i < 4; i++) {                                 // ringing
+          it.line(x - 70 - i, y - 40, x - 82 - i, y - 10, fg);
+          it.line(x + 70 + i, y - 40, x + 82 + i, y - 10, fg);
+        }
+        return;
+      }
 
       // "Teams · PC-STUDIO" under the label, unless privacy mode is on or
       // the status has no source (manual or offline).
@@ -143,7 +172,39 @@ display:
       it.print(cx, cy - h / 2 - 4, id(font_label), fg, TextAlign::CENTER, first.c_str());
       it.print(cx, cy + h / 2 + 4, id(font_label), fg, TextAlign::CENTER, second.c_str());
 
+binary_sensor:
+  - platform: gpio
+    id: doorbell_button
+    name: Doorbell button
+    icon: mdi:doorbell
+    pin:
+      number: ${doorbell_pin}
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+      ignore_strapping_warning: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - script.execute: ring_doorbell
+
 switch:
+  # Turns the picture upside down, for a board mounted the other way round.
+  - platform: template
+    id: flip_display
+    name: Flip display
+    icon: mdi:screen-rotation
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - lambda: id(main_display).set_rotation(display::DISPLAY_ROTATION_270_DEGREES);
+      - component.update: main_display
+    on_turn_off:
+      - lambda: id(main_display).set_rotation(display::DISPLAY_ROTATION_90_DEGREES);
+      - component.update: main_display
+
   # Hides app and PC names on the display (Home Assistant still sees them).
   - platform: template
     id: privacy_mode
@@ -211,3 +272,29 @@ script:
                 green: !lambda 'return id(current_color).g / 255.0f;'
                 blue: !lambda 'return id(current_color).b / 255.0f;'
       - component.update: main_display
+
+  # Shows a bell for a few seconds and blinks the LED white, then goes back
+  # to the status.
+  - id: show_doorbell
+    mode: restart
+    then:
+      - lambda: id(doorbell_shown) = true;
+      - component.update: main_display
+      - repeat:
+          count: 3
+          then:
+            - light.turn_on:
+                id: status_led
+                brightness: 100%
+                red: 1.0
+                green: 1.0
+                blue: 1.0
+                transition_length: 0s
+            - delay: 250ms
+            - light.turn_off:
+                id: status_led
+                transition_length: 0s
+            - delay: 250ms
+      - delay: 3500ms
+      - lambda: id(doorbell_shown) = false;
+      - script.execute: apply_status

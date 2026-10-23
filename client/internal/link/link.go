@@ -21,6 +21,8 @@ type Conn interface {
 	ListEntities(ctx context.Context) (espapi.Entities, error)
 	ExecuteAction(ctx context.Context, action espapi.Entity, values map[string]string) error
 	SetSelect(ctx context.Context, key uint32, option string) error
+	SetSwitch(ctx context.Context, key uint32, on bool) error
+	SubscribeStates(ctx context.Context, fn func(espapi.State)) error
 	Done() <-chan struct{}
 	Err() error
 	Close() error
@@ -208,6 +210,54 @@ func SetDisplayLanguage(lang string) func(context.Context, Conn, espapi.Entities
 			}
 		}
 		return fmt.Errorf("link: device has no display language %q (has %v)", lang, sel.Options)
+	}
+}
+
+// SetDisplayFlip returns an OnConnect hook that sets the device's
+// flip_display switch: "on" turns the picture upside down, "off" turns it
+// back, "" leaves the device as it is. Devices without the switch (no
+// display) are left alone.
+func SetDisplayFlip(mode string) func(context.Context, Conn, espapi.Entities) error {
+	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
+		if mode != "on" && mode != "off" {
+			return nil
+		}
+		sw, ok := ents.Find(espapi.KindSwitch, "flip_display")
+		if !ok {
+			return nil
+		}
+		return c.SetSwitch(ctx, sw.Key, mode == "on")
+	}
+}
+
+// WatchDoorbell returns an OnConnect hook that calls ring, from the
+// connection's reader goroutine, every time the device's doorbell event
+// fires. ring must not block. Devices without the event are left alone.
+func WatchDoorbell(ring func()) func(context.Context, Conn, espapi.Entities) error {
+	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
+		ev, ok := ents.Find(espapi.KindEvent, "doorbell")
+		if !ok {
+			return nil
+		}
+		return c.SubscribeStates(ctx, func(st espapi.State) {
+			if st.Key == ev.Key && st.Value == "ring" {
+				ring()
+			}
+		})
+	}
+}
+
+// Hooks combines OnConnect hooks; they run in order and every one runs even
+// if an earlier one fails. The errors are joined.
+func Hooks(hooks ...func(context.Context, Conn, espapi.Entities) error) func(context.Context, Conn, espapi.Entities) error {
+	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
+		var errs []error
+		for _, h := range hooks {
+			if h != nil {
+				errs = append(errs, h(ctx, c, ents))
+			}
+		}
+		return errors.Join(errs...)
 	}
 }
 

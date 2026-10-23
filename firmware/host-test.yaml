@@ -37,3 +37,16 @@ script:
             - id(status_label).state.c_str()
             - id(active_app).state.c_str()
             - id(active_pc).state.c_str()
+
+  - id: show_doorbell
+    then:
+      - logger.log: "Doorbell rang"
+
+switch:
+  # Stand-in for the board's flip_display (no display here), so the PC app's
+  # setting can be tested.
+  - platform: template
+    id: flip_display
+    name: Flip display
+    optimistic: true
+    restore_mode: ALWAYS_OFF

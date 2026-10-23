@@ -24,6 +24,13 @@ trap 'rm -rf "$work"' EXIT
 # Work on a copy of the tracked firmware files, so a developer's own
 # secrets.yaml never ends up in the bundle.
 (cd "$root" && git ls-files firmware | tar -cf - -T -) | tar -xf - -C "$work"
+# The device reports the release as its project version (Home Assistant
+# shows it). Development builds keep the version in board.yaml.
+if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	sed -i "s|^    version: \"[^\"]*\"\(  # project version.*\)$|    version: \"$version\"\1|" \
+		"$work/firmware/common/board.yaml"
+	grep -q "version: \"$version\"" "$work/firmware/common/board.yaml"
+fi
 sed "s|^api_encryption_key: .*|api_encryption_key: \"$(openssl rand -base64 32)\"|" \
 	"$work/firmware/secrets.example.yaml" >"$work/firmware/secrets.yaml"
 

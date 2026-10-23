@@ -29,12 +29,18 @@ type Config struct {
 	// DisplayLanguage is set on the device's display_language select on
 	// connect; empty leaves the device as it is.
 	DisplayLanguage string `json:"display_language,omitempty"`
+	// DisplayFlip is set on the device's flip_display switch on connect:
+	// "on" (upside down), "off", or empty to leave the device as it is.
+	DisplayFlip string `json:"display_flip,omitempty"`
 	// PCName is reported for this PC; empty uses the computer name.
 	PCName string `json:"pc_name,omitempty"`
 	// SendAppNames reports which app uses the mic/camera.
 	SendAppNames bool `json:"send_app_names"`
 	// Notifications enables notifications for problems that last.
 	Notifications bool `json:"notifications"`
+	// Doorbell shows a notification, with sound, when the light's doorbell
+	// button is pressed.
+	Doorbell bool `json:"doorbell"`
 	// Ignore lists executables or Store packages not to report.
 	Ignore []string `json:"ignore,omitempty"`
 	// AppNames maps executables or packages to the names shown.
@@ -49,7 +55,7 @@ const (
 
 // Default returns the configuration of a fresh install.
 func Default() Config {
-	return Config{Host: DefaultHost, Port: DefaultPort, SendAppNames: true, Notifications: true}
+	return Config{Host: DefaultHost, Port: DefaultPort, SendAppNames: true, Notifications: true, Doorbell: true}
 }
 
 // Path returns %APPDATA%\KnockBlock\config.json (the user config directory

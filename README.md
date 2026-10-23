@@ -7,7 +7,7 @@ KnockBlock is a small status light that hangs outside your room and tells everyo
 ## Getting started
 
 1. **Flash the light.** Download `knockblock-<version>.esphomebundle.tar.gz` from the [latest release](https://github.com/Cecchellone/KnockBlock/releases/latest), extract it, put your Wi-Fi and a new API key (`openssl rand -base64 32`) in `secrets.yaml`, and run `esphome run knockblock.yaml` with the board on USB. Using the ESPHome dashboard or Home Assistant instead? See [the remote package](#installing-the-firmware-from-the-esphome-dashboard--home-assistant).
-2. **Install the PC app.** Run `KnockBlock-<version>.msi` (no administrator rights needed). On first start it opens its settings page in your browser.
+2. **Install the PC app.** Run `KnockBlock-<version>.msi` (no administrator rights needed). On first start it opens its settings window.
 3. **Connect them.** Paste the same API key, check the device address (default `knockblock.local`), press **Test connection**, then **Save**. The tray icon turns green and the light shows "Free".
 
 From then on, the light follows your microphone and webcam. Several PCs can drive the same light; the busiest status wins. See [`docs/presence.md`](docs/presence.md).
@@ -61,7 +61,7 @@ The required Go toolchain is pinned in `client/go.mod` and downloaded automatica
 
 ### Downloads
 
-Each [release](https://github.com/Cecchellone/KnockBlock/releases) has:
+Every merge into `main` publishes a new [release](https://github.com/Cecchellone/KnockBlock/releases) (the next patch version). Each one has:
 
 - `KnockBlock-<version>.msi`: the Windows tray app. Installs per user, with no administrator rights; `AUTOSTART=0` skips starting with Windows.
 - `knockblock-<version>.esphomebundle.tar.gz`: the firmware configuration. Extract it, fill in `secrets.yaml`, then run `esphome run knockblock.yaml`.
@@ -74,8 +74,9 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 
 - The **icon colour** follows this PC's status: green free, amber microphone, orange camera, red call, purple do not disturb. It is grey while the light is unreachable.
 - The **menu** shows the status and the connection. You can force "Free" or "Do not disturb" ("Automatic" goes back to detection), open the settings, toggle "Start with Windows", or quit.
-- **Settings…** opens a small page in your browser (served on `127.0.0.1` only while it is open, behind a random per-session link; it closes itself after 3 minutes without use). It has the device host and port, the encryption key, the app and display languages, the PC name, whether to send app names, ignored apps, custom app names, notifications and "Start with Windows", plus a **Test connection** button. Everything is in your language (English or Italian; English is the fallback).
+- **Settings…** opens the settings window: the device address and port, the encryption key, the app and display languages, the light's display orientation, the PC name, whether to send app names, the doorbell, ignored apps, custom app names, notifications and "Start with Windows", plus a **Test connection** button. Everything is in your language (English or Italian; English is the fallback). The window takes no memory when closed.
 - The settings are stored in `%APPDATA%\KnockBlock\config.json`; the encryption key is encrypted with Windows DPAPI and never shown again once saved. The app reloads the file as soon as it changes. If you edit the file by hand, you can put the key in plain text as `"key": "…"`: the app encrypts it on the next start and removes the plain copy.
+- **Doorbell**: when someone presses the light's button, every PC running KnockBlock plays a chime and shows "Someone is at your door", also during calls (turn it off in the settings). The light shows a bell for a few seconds.
 - **Logs** go to `%LOCALAPPDATA%\KnockBlock\logs\knockblock.log`. Run `knockblock.exe -debug -debug-mem 30s` to log details and memory use.
 
 ### Trying the PC side without the tray app
@@ -85,9 +86,16 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 ```sh
 knockctl.exe -addr knockblock.local -key <api key> agent     # detect mic/camera use and report it until Ctrl-C
 knockctl.exe detect                                            # show what Windows reports about mic/camera use
+knockctl.exe -addr knockblock.local -key <api key> ring       # ring the doorbell, as if the button were pressed
+knockctl.exe -addr knockblock.local -key <api key> flip on    # turn the light's display upside down (off: back)
 ```
 
 Options: `-pc NAME` (default: the computer name), `-ignore app.exe,…`, `-no-app-names`, `-debug-mem 30s`.
+
+### Doorbell button and display orientation
+
+- The doorbell is the board's **BOOT** button. To use an external push button instead, wire it between a free GPIO and GND and set `doorbell_pin` in your device config's `substitutions:` (e.g. `doorbell_pin: GPIO4`). Home Assistant sees a `Doorbell` event (device class `doorbell`) and a `Ring doorbell` button.
+- If the light hangs the other way round, turn on the **Flip display** switch (Home Assistant), or choose "Upside down" in the PC app's settings. The device remembers it.
 
 ### Installing the firmware from the ESPHome dashboard / Home Assistant
 

@@ -13,6 +13,8 @@ substitutions:
   # KnockBlock version: a branch or tag of the GitHub repository. Used for
   # both the package and its external component.
   knockblock_ref: main
+  # Button that rings the doorbell (default: the board's BOOT button, GPIO9).
+  # doorbell_pin: GPIO4
 
 packages:
   knockblock:
