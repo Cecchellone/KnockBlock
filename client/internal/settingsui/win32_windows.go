@@ -28,6 +28,8 @@ var (
 	procEnumChildWindows          = user32.NewProc("EnumChildWindows")
 	procGetDC                     = user32.NewProc("GetDC")
 	procGetDpiForWindow           = user32.NewProc("GetDpiForWindow")
+	procGetSysColor               = user32.NewProc("GetSysColor")
+	procGetSysColorBrush          = user32.NewProc("GetSysColorBrush")
 	procGetMessageW               = user32.NewProc("GetMessageW")
 	procGetMonitorInfoW           = user32.NewProc("GetMonitorInfoW")
 	procGetWindowRect             = user32.NewProc("GetWindowRect")
@@ -60,6 +62,7 @@ var (
 	procDeleteObject       = gdi32.NewProc("DeleteObject")
 	procGetDeviceCaps      = gdi32.NewProc("GetDeviceCaps")
 	procSelectObject       = gdi32.NewProc("SelectObject")
+	procSetBkColor         = gdi32.NewProc("SetBkColor")
 
 	procInitCommonControlsEx = comctl32.NewProc("InitCommonControlsEx")
 )
@@ -98,21 +101,22 @@ const (
 	ssNoPrefix      = 0x80
 
 	// Messages.
-	wmDestroy      = 0x0002
-	wmClose        = 0x0010
-	wmSetFont      = 0x0030
-	wmSetIcon      = 0x0080
-	wmCommand      = 0x0111
-	wmDpiChanged   = 0x02E0
-	wmApp          = 0x8000
-	bmGetCheck     = 0x00F0
-	bmSetCheck     = 0x00F1
-	cbAddString    = 0x0143
-	cbGetCurSel    = 0x0147
-	cbSetCurSel    = 0x014E
-	emSetSel       = 0x00B1
-	emSetLimitText = 0x00C5
-	emSetCueBanner = 0x1501
+	wmDestroy        = 0x0002
+	wmClose          = 0x0010
+	wmSetFont        = 0x0030
+	wmSetIcon        = 0x0080
+	wmCommand        = 0x0111
+	wmCtlColorStatic = 0x0138
+	wmDpiChanged     = 0x02E0
+	wmApp            = 0x8000
+	bmGetCheck       = 0x00F0
+	bmSetCheck       = 0x00F1
+	cbAddString      = 0x0143
+	cbGetCurSel      = 0x0147
+	cbSetCurSel      = 0x014E
+	emSetSel         = 0x00B1
+	emSetLimitText   = 0x00C5
+	emSetCueBanner   = 0x1501
 
 	bnClicked = 0
 	idOK      = 1
@@ -127,7 +131,7 @@ const (
 	mbOK          = 0x0
 	mbIconWarning = 0x30
 
-	colorBtnFace           = 15
+	colorWindow            = 5
 	idcArrow               = 32512
 	iconSmall, iconBig     = 0, 1
 	spiGetNonClientMetrics = 0x29

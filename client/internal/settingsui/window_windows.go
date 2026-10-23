@@ -220,7 +220,7 @@ func register(inst windows.Handle) error {
 			WndProc:    wndProcCB,
 			Instance:   inst,
 			Cursor:     windows.Handle(cursor),
-			Background: windows.Handle(colorBtnFace + 1),
+			Background: windows.Handle(windowBrush()),
 			ClassName:  className,
 		}
 		wc.Size = uint32(unsafe.Sizeof(wc))
@@ -579,6 +579,12 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 				c.startTest()
 				return 0
 			}
+		case wmCtlColorStatic:
+			// Labels, check boxes and group boxes take the window's
+			// background instead of the grey dialog colour.
+			bg, _, _ := procGetSysColor.Call(colorWindow)
+			procSetBkColor.Call(wParam, bg)
+			return windowBrush()
 		case wmTestDone:
 			c.testDone()
 			return 0
@@ -595,6 +601,13 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 	}
 	r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), m, wParam, lParam)
 	return r
+}
+
+// windowBrush is the system brush of the window background colour (not to
+// be deleted).
+func windowBrush() uintptr {
+	b, _, _ := procGetSysColorBrush.Call(colorWindow)
+	return b
 }
 
 // windowDPI is the DPI of the window's monitor (Windows 10 1607+), else the
