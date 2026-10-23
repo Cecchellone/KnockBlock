@@ -10,6 +10,10 @@
 //	knockctl [flags] heartbeat          press the heartbeat button
 //	knockctl [flags] report <pc> <status> [app]
 //	                                    report a PC's status, as the tray app does
+//	knockctl detect                     list the Windows consent store entries:
+//	                                    which apps used the mic/camera, and which use it now
+//	knockctl [flags] agent              run the tray app's presence loop without a tray:
+//	                                    detect, compute and report until Ctrl-C
 //
 // The encryption key can also be given in the KNOCKBLOCK_KEY environment
 // variable, which keeps it out of the shell history.
@@ -45,8 +49,14 @@ func run() error {
 	timeout := flag.Duration("timeout", 15*time.Second, "timeout for connecting and for commands")
 	debugMem := flag.Duration("debug-mem", 0, "log memory statistics at this interval (0 = off)")
 	verbose := flag.Bool("v", false, "debug logging")
+	host, _ := os.Hostname()
+	pc := flag.String("pc", host, "agent: name reported for this PC")
+	ignore := flag.String("ignore", "", "agent: comma-separated executables or packages to ignore")
+	noApps := flag.Bool("no-app-names", false, "agent: do not send app names")
+	interval := flag.Duration("interval", time.Second, "agent: detection poll interval")
+	fakeDetect := flag.String("fake-detect", "", "agent: read apps in use from this file instead of the registry (lines: mic|camera <exe or package>)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|report <pc> <status> [app]\n\nflags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|report <pc> <status> [app]|detect|agent\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -66,6 +76,21 @@ func run() error {
 	defer stop()
 	if *debugMem > 0 {
 		go memdebug.Run(ctx, log, *debugMem)
+	}
+
+	dialOpts := espapi.Options{
+		Address:       *addr,
+		EncryptionKey: *key,
+		ClientInfo:    "knockctl " + version,
+		Logger:        log,
+	}
+	switch args[0] {
+	case "detect":
+		return detectCmd()
+	case "agent":
+		return agentCmd(ctx, log, dialOpts, agentFlags{
+			pc: *pc, ignore: *ignore, noApps: *noApps, interval: *interval, fakeDetect: *fakeDetect,
+		})
 	}
 
 	dialCtx, cancel := context.WithTimeout(ctx, *timeout)

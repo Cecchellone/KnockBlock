@@ -30,5 +30,11 @@ settings ("Device display language").
 
 ## Tray app (client)
 
-Covered when the tray app is localized (milestone 6): add
-`client/locales/<code>.json` with the same keys as `en.json`.
+1. Copy `client/locales/en.json` to `client/locales/<code>.json` and translate
+   the values. Keep the keys and the `{placeholders}` exactly as they are.
+2. Run `go test ./locales/` in `client/`. It fails if a key is missing or
+   extra, or if a placeholder differs from English.
+
+The app finds the new file by itself. It uses the language chosen in the
+settings, otherwise the Windows display language (`it-IT` matches `it`),
+otherwise English. A key missing from a translation falls back to English.

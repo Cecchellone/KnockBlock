@@ -32,6 +32,9 @@
     <!-- 1 = start with Windows (default), 0 = do not. -->
     <Property Id="AUTOSTART" Value="1" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/Cecchellone/KnockBlock" />
+    <!-- Icon for "Installed apps" and the Start menu (from internal/icon). -->
+    <Icon Id="KnockBlock.ico" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="KnockBlock.ico" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="LocalAppDataFolder">
@@ -52,7 +55,7 @@
 
       <Directory Id="ProgramMenuFolder">
         <Component Id="StartMenuShortcut" Guid="fc1f531b-7543-425a-b9c3-094cf5c66530">
-          <Shortcut Id="StartMenuKnockBlock" Name="KnockBlock"
+          <Shortcut Id="StartMenuKnockBlock" Name="KnockBlock" Icon="KnockBlock.ico"
                     Target="[INSTALLDIR]knockblock.exe" WorkingDirectory="INSTALLDIR" />
           <RegistryValue Root="HKCU" Key="Software\KnockBlock" Name="StartMenuShortcut"
                          Type="integer" Value="1" KeyPath="yes" />

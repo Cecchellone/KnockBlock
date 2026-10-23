@@ -1,16 +1,28 @@
 // Command knockblock is the KnockBlock Windows tray app: it detects
-// microphone and webcam usage and sends the resulting status to the
-// KnockBlock device over the ESPHome Native API.
+// microphone and webcam use and reports this PC's status to the KnockBlock
+// light over the ESPHome Native API (CLAUDE.md §5).
 //
-// This is a placeholder entry point; the tray app is built in milestone 6
-// (see CLAUDE.md §7).
+//	knockblock [-debug] [-debug-mem 30s]
+//
+// It logs to %LOCALAPPDATA%\KnockBlock\logs\knockblock.log and reads
+// %APPDATA%\KnockBlock\config.json.
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"os"
+)
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
-	fmt.Println("KnockBlock", version)
+	debug := flag.Bool("debug", false, "debug logging")
+	debugMem := flag.Duration("debug-mem", 0, "log memory statistics at this interval (0 = off)")
+	flag.Parse()
+	if err := run(*debug, *debugMem); err != nil {
+		fmt.Fprintln(os.Stderr, "knockblock:", err)
+		os.Exit(1)
+	}
 }

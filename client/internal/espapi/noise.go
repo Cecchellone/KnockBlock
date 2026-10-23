@@ -244,3 +244,10 @@ func (t *noiseTransport) writeFrame(msgType uint32, payload []byte) error {
 	_, err = t.w.Write(frame)
 	return err
 }
+
+// ValidateKey checks that key is a valid API encryption key: base64 of 32
+// bytes, as in the firmware's `api: encryption: key:`.
+func ValidateKey(key string) error {
+	_, err := decodeNoiseKey(key)
+	return err
+}

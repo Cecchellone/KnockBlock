@@ -51,6 +51,7 @@ These three requirements drive every design decision. If a change conflicts with
 ```
 /CLAUDE.md
 /README.md                      # user-facing: what it is, how to flash, how to install
+/CHANGELOG.md                   # user-visible changes per release
 /LICENSE
 /.gitignore                     # must ignore secrets.yaml, build output, *.exe
 /firmware/
@@ -71,15 +72,22 @@ These three requirements drive every design decision. If a change conflicts with
   go.mod
   cmd/knockblock/                 # main package: tray app entry point
   cmd/knockctl/                   # dev CLI on the same client (tests, trying the device); not shipped
+  cmd/genicon/                    # writes the app .ico at build time (scripts/winres.sh); not shipped
   internal/espapi/              # minimal Native API client (transport, noise, framing, messages)
   internal/espapi/pb/           # generated protobuf code (do not edit)
   internal/detect/              # mic/webcam detection (Windows impl + fake for tests)
-  internal/status/              # state machine: inputs -> status ID
+  internal/status/              # state machine: inputs -> status ID, and when to report
+  internal/link/                # persistent connection: reconnect with backoff, presence reports
+  internal/agent/               # presence loop (detect -> status -> link), shared by tray and knockctl agent
   internal/config/              # config load/save, secret protection
   internal/i18n/                # locale loading, language detection, fallback
   internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
   internal/tray/                # tray icon, menu, icons per status
   internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
+  internal/logfile/             # size-rotated log file (logs never kept in memory)
+  internal/sysevents/           # resume-from-sleep and network-change notifications (Windows)
+  internal/autostart/           # "Start with Windows" (HKCU Run value)
+  internal/icon/                # draws the app/tray icon (door + status light) and encodes .ico; no image files in the repo
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/
   knockblock.wxs                  # MSI definition (WiX 3 subset, built on Linux with wixl)
@@ -87,6 +95,7 @@ These three requirements drive every design decision. If a change conflicts with
 /docs/
   protocol-notes.md             # what we learned about the Native API, with aioesphomeapi references
   adding-a-language.md          # step-by-step guide
+  releasing.md                  # release checklist (hardware checks, tagging)
 ```
 
 ## 4. Firmware design (ESPHome)
@@ -157,7 +166,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 ### 5.6 Build and distribution
 
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
-- Embed icon and version info in the executable.
+- Embed icon and version info in the executable: `scripts/winres.sh` draws the icon with `internal/icon` and writes `cmd/knockblock/rsrc_windows_amd64.syso` with go-winres (pinned, run via `go run`).
 - Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
 - Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both to a GitHub release on tags `vX.Y.Z`.
 
@@ -195,7 +204,7 @@ Work in small PRs, one milestone (or part of one) at a time. Each milestone has 
 5. **Detection + status logic** — registry reader, ignore list, state machine, fake for tests. Accept: unit tests for the state machine; manual test notes on Windows.
 6. **Tray app** — systray, menu, reconnect/backoff, sleep/resume handling, heartbeat, i18n wired in. Accept: idle memory ≤ 15 MB reported in the PR.
 7. **Settings page + config** — on-demand localhost UI, DPAPI secret storage, autostart toggle, localized.
-8. **Installer + release** — MSI, firmware bundle, GitHub Actions release (pipeline in place; the installer ships the tray app once M6 exists).
+8. **Installer + release** — MSI, firmware bundle, GitHub Actions release; release checklist in `docs/releasing.md`, changelog in `CHANGELOG.md`. Tags are pushed by the owner after the hardware checks.
 
 ## 8. Environment notes for cloud sessions
 

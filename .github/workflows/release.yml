@@ -109,6 +109,28 @@ jobs:
           if ((Autostart) -ne "`"$exe`"") { throw "unexpected Run value: '$(Autostart)'" }
           Write-Host "Installed: $exe, shortcut, autostart"
 
+          # The installed app starts, stays up, and logs its memory use
+          # (CLAUDE.md §2.1). No device exists here, so it keeps retrying.
+          # An existing config file skips the first-start settings page, so
+          # no browser opens and the number is the idle tray alone.
+          $cfgDir = Join-Path $env:APPDATA 'KnockBlock'
+          New-Item -ItemType Directory -Force $cfgDir | Out-Null
+          Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
+          $log = Join-Path $env:LOCALAPPDATA 'KnockBlock\logs\knockblock.log'
+          $app = Start-Process $exe -ArgumentList '-debug-mem','3s','-debug' -PassThru
+          Start-Sleep -Seconds 15
+          if ($app.HasExited) { Get-Content $log -ErrorAction SilentlyContinue; throw "knockblock.exe exited early (code $($app.ExitCode))" }
+          Get-Content $log
+          $mem = Select-String -Path $log -Pattern 'private_working_set_kib=(\d+)' | Select-Object -Last 1
+          if (-not $mem) { throw "no memory statistics in the log" }
+          $kib = [int]$mem.Matches[0].Groups[1].Value
+          Write-Host "Idle private working set: $kib KiB (target <= 15360, ceiling 20480)"
+          if ($kib -gt 20480) { throw "private working set $kib KiB exceeds the 20 MB ceiling" }
+          # A second start must exit at once (single instance).
+          $second = Start-Process $exe -PassThru -Wait
+          if ($second.ExitCode -ne 0) { throw "second instance exit code $($second.ExitCode)" }
+          Stop-Process -Id $app.Id
+
           Msi "/x `"$msi`" /qn /l*v msi.log"
           if (Test-Path $exe) { throw "knockblock.exe left after uninstall" }
           if (Autostart) { throw "Run value left after uninstall" }

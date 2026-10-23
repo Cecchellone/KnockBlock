@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Compiles a host-platform firmware, runs it in the background and runs the
-# Go integration tests against it.
+# Go integration tests (every package) against it, one package at a time
+# since they share the device.
 #
 #   scripts/itest-host.sh [config]   default: host-test.yaml (in firmware/)
 #
@@ -41,5 +42,5 @@ echo "==> running integration tests"
 cd "$root/client"
 GOTOOLCHAIN="$(awk '/^toolchain /{print $2}' go.mod)" \
 	KNOCKBLOCK_ITEST_ADDR="127.0.0.1:$port" \
-	go test -tags integration -count=1 -v -run Integration ./internal/espapi/
+	go test -tags integration -count=1 -p 1 -v -run Integration ./internal/...
 # KNOCKBLOCK_ITEST_KEY, if set, is inherited by go test.

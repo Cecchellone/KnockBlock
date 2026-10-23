@@ -1,0 +1,75 @@
+package status
+
+import (
+	"testing"
+	"time"
+
+	"github.com/Cecchellone/KnockBlock/client/internal/detect"
+)
+
+var (
+	teams   = detect.App{Name: "Teams", Known: true}
+	discord = detect.App{Name: "Discord", Known: true}
+	obs     = detect.App{Name: "OBS", Known: true}
+	unknown = detect.App{Name: "Arecorder"} // sorts before known names
+)
+
+func TestCompute(t *testing.T) {
+	tests := []struct {
+		name     string
+		mic, cam []detect.App
+		override Override
+		sendApps bool
+		want     Result
+	}{
+		{"nothing", nil, nil, Auto, true, Result{Free, ""}},
+		{"mic only", []detect.App{discord}, nil, Auto, true, Result{Mic, "Discord"}},
+		{"camera only", nil, []detect.App{obs}, Auto, true, Result{Camera, "OBS"}},
+		{"both: camera app wins", []detect.App{discord}, []detect.App{teams}, Auto, true, Result{Call, "Teams"}},
+		{"known app before unknown", []detect.App{unknown, discord}, nil, Auto, true, Result{Mic, "Discord"}},
+		{"only unknown apps", []detect.App{unknown}, nil, Auto, true, Result{Mic, "Arecorder"}},
+		{"app names off", []detect.App{discord}, []detect.App{teams}, Auto, false, Result{Call, ""}},
+		{"override dnd", []detect.App{discord}, nil, ForceDND, true, Result{DND, ""}},
+		{"override free in a call", []detect.App{discord}, []detect.App{teams}, ForceFree, true, Result{Free, ""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &detect.Snapshot{Mic: tt.mic, Camera: tt.cam}
+			if got := Compute(s, tt.override, tt.sendApps); got != tt.want {
+				t.Errorf("Compute = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReporter(t *testing.T) {
+	var r Reporter
+	t0 := time.Unix(1000, 0)
+	call := Result{Call, "Teams"}
+	free := Result{Free, ""}
+
+	steps := []struct {
+		name string
+		want Result
+		at   time.Duration
+		gen  uint64
+		due  bool
+	}{
+		{"first report", call, 0, 1, true},
+		{"unchanged", call, 5 * time.Second, 1, false},
+		{"changed", free, 6 * time.Second, 1, true},
+		{"unchanged again", free, 20 * time.Second, 1, false},
+		{"heartbeat", free, 36 * time.Second, 1, true},
+		{"reconnected", free, 37 * time.Second, 2, true},
+		{"after reconnect", free, 38 * time.Second, 2, false},
+	}
+	for _, s := range steps {
+		now := t0.Add(s.at)
+		if got := r.Due(s.want, now, s.gen); got != s.due {
+			t.Fatalf("%s: Due = %v, want %v", s.name, got, s.due)
+		}
+		if s.due {
+			r.Sent(s.want, now, s.gen)
+		}
+	}
+}

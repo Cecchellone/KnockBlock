@@ -18,6 +18,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$root/dist"
 
 echo "==> building knockblock.exe $version"
+"$root/scripts/winres.sh" "$version"
 cd "$root/client"
 GOTOOLCHAIN="$(awk '/^toolchain /{print $2}' go.mod)" \
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
@@ -29,6 +30,7 @@ wixl --arch x64 \
 	-D Version="$version" \
 	-D Exe="$root/dist/knockblock.exe" \
 	-D License="$root/LICENSE" \
+	-D Icon="$root/dist/knockblock.ico" \
 	-o "$root/dist/KnockBlock-$version.msi" \
 	"$root/installer/knockblock.wxs"
 # AUTOSTART=0 disables the StartWithWindows feature; wixl cannot express it.
