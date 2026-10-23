@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -27,8 +28,8 @@ import (
 // The monitor runs on its own OS thread in the multithreaded apartment;
 // reports arrive on Media Foundation's threads and are copied under mu.
 type sensorMonitor struct {
-	mu        sync.Mutex
-	streaming []uint32 // programs streaming now, from the last report
+	mu     sync.Mutex
+	active []cameraStream // programs streaming now, or until recently
 
 	cb   sensorCallback
 	stop chan struct{}
@@ -58,6 +59,19 @@ const (
 	vProcPID        = 3 // IMFSensorProcessActivity
 	vProcStreaming  = 4 //
 )
+
+// cameraStream is a program streaming from a camera.
+type cameraStream struct {
+	pid   uint32
+	live  bool      // in the last report
+	until time.Time // when not live: still reported until then
+}
+
+// streamHold keeps reporting a program for a moment after a report leaves
+// it out. During a Discord call with the camera on, reports left the camera
+// out for a second or two now and then, and the light jumped between
+// "call" and "mic" (owner's PC, October 2026).
+const streamHold = 5 * time.Second
 
 // sensorCallback is our IMFSensorActivitiesReportCallback: a COM object
 // whose first field is its vtable. Windows only calls it, never frees it.
@@ -144,7 +158,17 @@ func (m *sensorMonitor) run(started chan<- error) {
 func (m *sensorMonitor) onReport(reports *comObject) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.streaming = m.streaming[:0]
+	now := time.Now()
+	for i := range m.active {
+		m.active[i].live = false
+	}
+	defer func() {
+		for i := range m.active {
+			if st := &m.active[i]; !st.live && st.until.IsZero() {
+				st.until = now.Add(streamHold)
+			}
+		}
+	}()
 	var count, procs, pid, streaming uint32
 	if failed(reports.call(vReportsCount, uintptr(unsafe.Pointer(&count)), 0, 0, 0)) {
 		return
@@ -165,7 +189,7 @@ func (m *sensorMonitor) onReport(reports *comObject) {
 				if !failed(p.call(vProcPID, uintptr(unsafe.Pointer(&pid)), 0, 0, 0)) &&
 					!failed(p.call(vProcStreaming, uintptr(unsafe.Pointer(&streaming)), 0, 0, 0)) &&
 					streaming != 0 {
-					m.streaming = append(m.streaming, pid)
+					m.markLive(pid)
 				}
 				release(&p)
 			}
@@ -174,15 +198,33 @@ func (m *sensorMonitor) onReport(reports *comObject) {
 	}
 }
 
-// streams calls fn with every program streaming from a camera now. Until
-// the first report arrives nothing streams: Windows sends one at start only
-// when a camera is in use.
+// markLive records pid as streaming in the current report; m.mu is held.
+func (m *sensorMonitor) markLive(pid uint32) {
+	for i := range m.active {
+		if m.active[i].pid == pid {
+			m.active[i] = cameraStream{pid: pid, live: true}
+			return
+		}
+	}
+	m.active = append(m.active, cameraStream{pid: pid, live: true})
+}
+
+// streams calls fn with every program streaming from a camera now, or
+// left out of the reports less than streamHold ago. Until the first report
+// arrives nothing streams: Windows sends one at start only when a camera
+// is in use.
 func (m *sensorMonitor) streams(fn func(pid uint32)) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, pid := range m.streaming {
-		fn(pid)
+	now := time.Now()
+	kept := m.active[:0]
+	for _, st := range m.active {
+		if st.live || now.Before(st.until) {
+			kept = append(kept, st)
+			fn(st.pid)
+		}
 	}
+	m.active = kept
 	return nil
 }
 
