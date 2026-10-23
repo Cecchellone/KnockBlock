@@ -51,6 +51,7 @@ These three requirements drive every design decision. If a change conflicts with
 ```
 /CLAUDE.md
 /README.md                      # user-facing: what it is, how to flash, how to install
+/CHANGELOG.md                   # user-visible changes per release
 /LICENSE
 /.gitignore                     # must ignore secrets.yaml, build output, *.exe
 /firmware/
@@ -94,6 +95,7 @@ These three requirements drive every design decision. If a change conflicts with
 /docs/
   protocol-notes.md             # what we learned about the Native API, with aioesphomeapi references
   adding-a-language.md          # step-by-step guide
+  releasing.md                  # release checklist (hardware checks, tagging)
 ```
 
 ## 4. Firmware design (ESPHome)
@@ -202,7 +204,7 @@ Work in small PRs, one milestone (or part of one) at a time. Each milestone has 
 5. **Detection + status logic** — registry reader, ignore list, state machine, fake for tests. Accept: unit tests for the state machine; manual test notes on Windows.
 6. **Tray app** — systray, menu, reconnect/backoff, sleep/resume handling, heartbeat, i18n wired in. Accept: idle memory ≤ 15 MB reported in the PR.
 7. **Settings page + config** — on-demand localhost UI, DPAPI secret storage, autostart toggle, localized.
-8. **Installer + release** — MSI, firmware bundle, GitHub Actions release (pipeline in place; the installer ships the tray app once M6 exists).
+8. **Installer + release** — MSI, firmware bundle, GitHub Actions release; release checklist in `docs/releasing.md`, changelog in `CHANGELOG.md`. Tags are pushed by the owner after the hardware checks.
 
 ## 8. Environment notes for cloud sessions
 

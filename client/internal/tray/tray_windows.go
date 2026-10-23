@@ -4,8 +4,10 @@ package tray
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
+	"io/fs"
 	"log/slog"
 	"os"
 	"sync"
@@ -79,6 +81,12 @@ func (a *app) onReady() {
 	})
 	go a.uiLoop()
 	go a.menuLoop()
+
+	// First start: nothing is configured yet, so show the settings page
+	// instead of a grey icon the user may not notice.
+	if _, err := os.Stat(a.opts.ConfigPath); errors.Is(err, fs.ErrNotExist) {
+		a.openSettings()
+	}
 }
 
 func (a *app) onExit() {
@@ -186,11 +194,7 @@ func (a *app) menuLoop() {
 		case <-a.items.dnd.ClickedCh:
 			a.setOverride(status.ForceDND)
 		case <-a.items.settings.ClickedCh:
-			if a.opts.OpenSettings != nil {
-				if err := a.opts.OpenSettings(a.opts.ConfigPath); err != nil {
-					a.log.Error("opening settings", "err", err)
-				}
-			}
+			a.openSettings()
 		case <-a.items.autostart.ClickedCh:
 			on := !a.items.autostart.Checked()
 			if err := autostart.Set(on); err != nil {
@@ -206,6 +210,15 @@ func (a *app) menuLoop() {
 			systray.Quit()
 			return
 		}
+	}
+}
+
+func (a *app) openSettings() {
+	if a.opts.OpenSettings == nil {
+		return
+	}
+	if err := a.opts.OpenSettings(a.opts.ConfigPath); err != nil {
+		a.log.Error("opening settings", "err", err)
 	}
 }
 

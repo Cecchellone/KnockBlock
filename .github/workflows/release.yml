@@ -111,6 +111,11 @@ jobs:
 
           # The installed app starts, stays up, and logs its memory use
           # (CLAUDE.md §2.1). No device exists here, so it keeps retrying.
+          # An existing config file skips the first-start settings page, so
+          # no browser opens and the number is the idle tray alone.
+          $cfgDir = Join-Path $env:APPDATA 'KnockBlock'
+          New-Item -ItemType Directory -Force $cfgDir | Out-Null
+          Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
           $log = Join-Path $env:LOCALAPPDATA 'KnockBlock\logs\knockblock.log'
           $app = Start-Process $exe -ArgumentList '-debug-mem','3s','-debug' -PassThru
           Start-Sleep -Seconds 15

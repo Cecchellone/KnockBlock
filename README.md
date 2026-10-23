@@ -4,7 +4,13 @@
 
 KnockBlock is a small status light that hangs outside your room and tells everyone in the house whether you are free, have the microphone on, have the webcam on, or are in a call. Your PC updates it automatically, so you never have to remember to flip a sign again.
 
-> 🚧 **Work in progress.** Nothing here is ready to use yet. See [`CLAUDE.md`](CLAUDE.md) for the design and the roadmap.
+## Getting started
+
+1. **Flash the light.** Download `knockblock-<version>.esphomebundle.tar.gz` from the [latest release](https://github.com/Cecchellone/KnockBlock/releases/latest), extract it, put your Wi-Fi and a new API key (`openssl rand -base64 32`) in `secrets.yaml`, and run `esphome run knockblock.yaml` with the board on USB. Using the ESPHome dashboard or Home Assistant instead? See [the remote package](#installing-the-firmware-from-the-esphome-dashboard--home-assistant).
+2. **Install the PC app.** Run `KnockBlock-<version>.msi` (no administrator rights needed). On first start it opens its settings page in your browser.
+3. **Connect them.** Paste the same API key, check the device address (default `knockblock.local`), press **Test connection**, then **Save**. The tray icon turns green and the light shows "Free".
+
+From then on, the light follows your microphone and webcam. Several PCs can drive the same light; the busiest status wins. See [`docs/presence.md`](docs/presence.md).
 
 ## How it works
 
@@ -39,7 +45,9 @@ KnockBlock is a small status light that hangs outside your room and tells everyo
 | `firmware/` | ESPHome configuration for the device (and a `host` build for tests) |
 | `client/` | Go module with the Windows tray app |
 | `proto/` | ESPHome Native API protobuf files, pinned to the version in `proto/VERSION` |
-| `docs/` | Protocol notes and contributor guides |
+| `installer/` | MSI definition (built on Linux with wixl) |
+| `scripts/` | Checks, integration tests, release builds |
+| `docs/` | Protocol notes and contributor guides; [`releasing.md`](docs/releasing.md) for maintainers |
 
 ## Development
 
