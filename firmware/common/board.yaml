@@ -81,6 +81,17 @@ font:
     glyphsets: [GF_Latin_Kernel]
     glyphs: ["àèéìòùÀÈÉÌÒÙ"]
 
+  # App and PC names under the label. They come from the PC apps, so they are
+  # not checked; characters outside this set are not drawn.
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 500
+    id: font_detail
+    size: 22
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: ["àèéìòùÀÈÉÌÒÙ·"]
+
 knockblock_i18n:
   check_fonts: [font_label]
 
@@ -99,10 +110,27 @@ display:
       const Color fg = luma > 150 ? Color::BLACK : Color::WHITE;
       it.fill(bg);
 
-      const std::string &text = id(status_label).state;
+      // "Teams · PC-STUDIO" under the label, unless privacy mode is on or
+      // the status has no source (manual or offline).
+      std::string detail;
+      if (!id(privacy_mode).state) {
+        const std::string &app = id(active_app).state;
+        const std::string &pc = id(active_pc).state;
+        detail = app.empty() || pc.empty() ? app + pc : app + " · " + pc;
+      }
       const int cx = it.get_width() / 2;
-      const int cy = it.get_height() / 2;
       int x1, y1, w, h;
+      if (!detail.empty()) {
+        it.get_text_bounds(cx, 0, detail.c_str(), id(font_detail), TextAlign::TOP_CENTER, &x1, &y1, &w, &h);
+        // Too wide: keep the app only.
+        if (w > it.get_width() - 8 && !id(active_app).state.empty())
+          detail = id(active_app).state;
+        it.print(cx, it.get_height() - 18, id(font_detail), fg, TextAlign::CENTER, detail.c_str());
+      }
+      // The label is centered in the space left above the detail line.
+      const int cy = detail.empty() ? it.get_height() / 2 : (it.get_height() - 30) / 2;
+
+      const std::string &text = id(status_label).state;
       it.get_text_bounds(cx, cy, text.c_str(), id(font_label), TextAlign::CENTER, &x1, &y1, &w, &h);
       const size_t split = text.rfind(' ', text.size() / 2 + 1);
       if (w <= it.get_width() - 16 || split == std::string::npos) {
@@ -114,6 +142,20 @@ display:
       const std::string second = text.substr(split + 1);
       it.print(cx, cy - h / 2 - 4, id(font_label), fg, TextAlign::CENTER, first.c_str());
       it.print(cx, cy + h / 2 + 4, id(font_label), fg, TextAlign::CENTER, second.c_str());
+
+switch:
+  # Hides app and PC names on the display (Home Assistant still sees them).
+  - platform: template
+    id: privacy_mode
+    name: Privacy mode
+    icon: mdi:eye-off
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - component.update: main_display
+    on_turn_off:
+      - component.update: main_display
 
 output:
   - platform: ledc

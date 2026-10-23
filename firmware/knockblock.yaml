@@ -17,7 +17,7 @@ external_components:
   - source:
       type: local
       path: components
-    components: [knockblock_i18n]
+    components: [knockblock_i18n, knockblock_presence]
 
 wifi:
   ssid: !secret wifi_ssid

@@ -252,8 +252,8 @@ func (c *Conn) Err() error {
 	}
 }
 
-// ListEntities returns the select, button and text sensor entities of the
-// device. Other entity types are skipped.
+// ListEntities returns the select, button, text sensor and action entities
+// of the device. Other entity types are skipped.
 func (c *Conn) ListEntities(ctx context.Context) (Entities, error) {
 	l := &listing{done: make(chan struct{})}
 	c.mu.Lock()
@@ -303,6 +303,30 @@ func (c *Conn) SetSelect(ctx context.Context, key uint32, option string) error {
 // PressButton presses a button entity.
 func (c *Conn) PressButton(ctx context.Context, key uint32) error {
 	return c.send(ctx, &pb.ButtonCommandRequest{Key: key})
+}
+
+// ExecuteAction calls a user-defined action with string arguments, given by
+// name. Every argument of the action must be a string and have a value; the
+// device does not answer.
+func (c *Conn) ExecuteAction(ctx context.Context, action Entity, values map[string]string) error {
+	if action.Kind != KindAction {
+		return fmt.Errorf("espapi: %s %q is not an action", action.Kind, action.ObjectID)
+	}
+	if len(values) != len(action.Args) {
+		return fmt.Errorf("espapi: action %q takes %d arguments, got %d", action.ObjectID, len(action.Args), len(values))
+	}
+	args := make([]*pb.ExecuteServiceArgument, len(action.Args))
+	for i, a := range action.Args {
+		if a.Type != pb.ServiceArgType_SERVICE_ARG_TYPE_STRING {
+			return fmt.Errorf("espapi: action %q: argument %q is %v; only strings are supported", action.ObjectID, a.Name, a.Type)
+		}
+		v, ok := values[a.Name]
+		if !ok {
+			return fmt.Errorf("espapi: action %q: missing argument %q", action.ObjectID, a.Name)
+		}
+		args[i] = &pb.ExecuteServiceArgument{String_: v}
+	}
+	return c.send(ctx, &pb.ExecuteServiceRequest{Key: action.Key, Args: args})
 }
 
 // Close disconnects gracefully: it sends DisconnectRequest and waits briefly

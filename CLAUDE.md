@@ -93,11 +93,14 @@ These three requirements drive every design decision. If a change conflicts with
 - Target board: Waveshare ESP32-C6-LCD-1.47. Use `esp32: variant: esp32c6` with `framework: type: esp-idf`.
 - **Verify before writing pins**: display (SPI pins, CS, DC, RST, backlight), LED GPIO (believed to be GPIO8), panel dimensions and offsets for the ST7789 172×320. Take them from the official Waveshare wiki/schematic and note the source URL in a YAML comment. Do not guess: a wrong pin means a black screen.
 - Entities exposed over the Native API (names in English, stable IDs):
-  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `mic`, `camera`, `call`, `dnd`, `offline`. Changing it updates LED colour and display label.
+  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `mic`, `camera`, `call`, `dnd`, `offline`. It shows the **combined** status of all sources (see Presence below) and updates LED colour and display label. Setting it directly (Home Assistant) reports the "manual" source.
   - `select` **`display_language`** — options are language codes (`en`, `it`, …); persisted across reboots (`restore_value: true`).
-  - `button` **`heartbeat`** — pressed periodically by the PC app; restarts a watchdog script.
+  - API action **`report_presence(pc, status, app)`** — called by every PC app on change and at least every ~30 s.
+  - `text_sensor` **`active_app`**, **`active_pc`** — app and PC causing the current status; **`status_label`** — the localized label shown.
+  - `button` **`heartbeat`** — keeps the manual source alive.
+  - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
-- **Watchdog**: if no heartbeat (and no status change) arrives for ~2 minutes, set `status` to `offline`. This prevents the light from staying on "call" after the PC shuts down. Do not rely on `api.connected`, because Home Assistant counts as a client too.
+- **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `dnd` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
 - `api:` with `encryption: key: !secret api_encryption_key` and **`reboot_timeout: 0s`** (otherwise the device reboots in a loop when neither the PC nor Home Assistant is connected).
 - `ota:` and `logger:` enabled; no `web_server`.
 - Fonts: the display font **must include accented glyphs** used by supported languages (at least `àèéìòù ÀÈÉÌÒÙ`). When a language is added, extend the glyph set.
@@ -114,7 +117,7 @@ Implement, in this order:
 3. Hello / connection negotiation as done by the current `aioesphomeapi` for the pinned ESPHome version.
 4. `ListEntities` → map entity `object_id`/name to numeric `key` (commands use keys).
 5. `SubscribeStates` → track current `status` and `display_language` values (they may be changed from Home Assistant).
-6. Commands: `SelectCommandRequest`, `ButtonCommandRequest`.
+6. Commands: `SelectCommandRequest`, `ButtonCommandRequest`, `ExecuteServiceRequest` (the `report_presence` action; string arguments only).
 7. Keepalive: answer device `PingRequest`; send our own pings; detect dead connections.
 8. Graceful `DisconnectRequest`/`DisconnectResponse`.
 9. Reconnect with exponential backoff and jitter, forever, silently.
@@ -127,13 +130,14 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - An app is "in use" when `LastUsedTimeStop == 0` and `LastUsedTimeStart != 0`. Verify this on a real machine and document findings in `docs/`.
 - Poll every 1–2 s (simple and cheap). Event-based `RegNotifyChangeKeyValue` is an optional later optimization.
 - User-configurable **ignore list** by executable name (e.g. apps that keep the mic open outside calls).
+- Report **which app** uses the camera/microphone, using friendly names from a built-in table that the settings can extend (`docs/presence.md`). Browsers show as the browser.
 - Windows-specific code behind `//go:build windows`; a fake implementation for tests so the module builds and tests on Linux.
 
 ### 5.3 Status logic
 
 - `mic && camera` → `call`; `camera` only → `camera`; `mic` only → `mic`; none → `free`.
 - Manual override from the tray menu (`dnd`, `free`, auto) takes priority until cleared.
-- Send status only on change, plus a heartbeat every ~30 s.
+- Send `report_presence(pc, status, app)` on change and every ~30 s; `pc` defaults to the Windows computer name (configurable). Send `offline` on exit. A setting can omit app names.
 - On resume from sleep / network change: force reconnect and resend status immediately.
 
 ### 5.4 UX

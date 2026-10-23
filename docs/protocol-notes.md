@@ -102,6 +102,20 @@ whichever ends first.
 - `SelectCommandRequest{key, state}` and `ButtonCommandRequest{key}` have no
   response. The new state arrives as a state update.
 
+## Actions
+
+User-defined actions (`api: actions:` in the firmware) are listed during
+ListEntities as `ListEntitiesServicesResponse`: a name, a key, and the
+arguments in call order, each with a type.
+
+- The client calls an action with `ExecuteServiceRequest{key, args}`. The
+  arguments are positional, in the declared order; for a string the value
+  goes in `string_`.
+- The client supports string arguments only, which is all `report_presence`
+  needs.
+- The device does not answer unless the action declares a response
+  (`supports_response`); KnockBlock's actions do not.
+
 ## Keepalive
 
 Source: `aioesphomeapi/connection.py`, `_async_send_keep_alive`.

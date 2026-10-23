@@ -26,11 +26,13 @@ var handledMessages = []proto.Message{
 	(*pb.ListEntitiesSelectResponse)(nil),
 	(*pb.ListEntitiesButtonResponse)(nil),
 	(*pb.ListEntitiesTextSensorResponse)(nil),
+	(*pb.ListEntitiesServicesResponse)(nil),
 	(*pb.SubscribeStatesRequest)(nil),
 	(*pb.SelectStateResponse)(nil),
 	(*pb.TextSensorStateResponse)(nil),
 	(*pb.SelectCommandRequest)(nil),
 	(*pb.ButtonCommandRequest)(nil),
+	(*pb.ExecuteServiceRequest)(nil),
 }
 
 // messageTable maps wire IDs to message types and back. It is built once
@@ -73,6 +75,9 @@ const (
 	KindSelect EntityKind = iota + 1
 	KindButton
 	KindTextSensor
+	// KindAction is a user-defined API action (`api: actions:`), called
+	// with ExecuteAction. Its ObjectID is the action name.
+	KindAction
 )
 
 func (k EntityKind) String() string {
@@ -83,6 +88,8 @@ func (k EntityKind) String() string {
 		return "button"
 	case KindTextSensor:
 		return "text_sensor"
+	case KindAction:
+		return "action"
 	default:
 		return fmt.Sprintf("EntityKind(%d)", int(k))
 	}
@@ -95,7 +102,14 @@ type Entity struct {
 	Key      uint32
 	ObjectID string
 	Name     string
-	Options  []string // select options
+	Options  []string    // select options
+	Args     []ActionArg // action arguments, in call order
+}
+
+// ActionArg is one argument of an action.
+type ActionArg struct {
+	Name string
+	Type pb.ServiceArgType
 }
 
 // Entities is the result of ListEntities.
@@ -129,6 +143,11 @@ func entityFromMessage(m proto.Message) (Entity, bool) {
 		e = Entity{Kind: KindButton, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
 	case *pb.ListEntitiesTextSensorResponse:
 		e = Entity{Kind: KindTextSensor, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
+	case *pb.ListEntitiesServicesResponse:
+		e = Entity{Kind: KindAction, Key: r.GetKey(), ObjectID: r.GetName(), Name: r.GetName()}
+		for _, a := range r.GetArgs() {
+			e.Args = append(e.Args, ActionArg{Name: a.GetName(), Type: a.GetType()})
+		}
 	default:
 		return Entity{}, false
 	}

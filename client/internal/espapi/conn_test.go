@@ -110,8 +110,8 @@ func TestListEntities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ents) != 4 {
-		t.Fatalf("got %d entities, want 4 (switch skipped): %+v", len(ents), ents)
+	if len(ents) != 5 {
+		t.Fatalf("got %d entities, want 5 (switch skipped): %+v", len(ents), ents)
 	}
 	tests := []struct {
 		kind     EntityKind
@@ -122,6 +122,7 @@ func TestListEntities(t *testing.T) {
 		{KindSelect, "display_language", keyLanguage},
 		{KindButton, "heartbeat", keyHeartbeat},
 		{KindTextSensor, "status_label", keyStatusLabel},
+		{KindAction, "report_presence", keyReport},
 	}
 	for _, tt := range tests {
 		e, ok := ents.Find(tt.kind, tt.objectID)
@@ -254,5 +255,49 @@ func TestGracefulClose(t *testing.T) {
 	}
 	if err := c.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
+	}
+}
+
+func TestExecuteAction(t *testing.T) {
+	d := newFakeDevice(t)
+	c := dialFake(t, d, Options{})
+	ctx := context.Background()
+	ents, err := c.ListEntities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, ok := ents.Find(KindAction, "report_presence")
+	if !ok || len(report.Args) != 3 || report.Args[0].Name != "pc" {
+		t.Fatalf("report_presence = %+v, %v", report, ok)
+	}
+	if err := c.ExecuteAction(ctx, report, map[string]string{"pc": "PC-STUDIO", "status": "call", "app": "Teams"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "report", func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return len(d.reports) == 1
+	})
+	d.mu.Lock()
+	got := d.reports[0]
+	d.mu.Unlock()
+	if len(got) != 3 || got[0] != "PC-STUDIO" || got[1] != "call" || got[2] != "Teams" {
+		t.Fatalf("device got %q; arguments must follow the declared order", got)
+	}
+
+	bad := []struct {
+		name   string
+		entity Entity
+		values map[string]string
+	}{
+		{"missing argument", report, map[string]string{"pc": "a", "status": "free"}},
+		{"unknown argument", report, map[string]string{"pc": "a", "status": "free", "ap": "x"}},
+		{"not an action", Entity{Kind: KindButton, ObjectID: "heartbeat"}, nil},
+		{"non-string argument", Entity{Kind: KindAction, ObjectID: "x", Args: []ActionArg{{Name: "n", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_INT}}}, map[string]string{"n": "1"}},
+	}
+	for _, tt := range bad {
+		if err := c.ExecuteAction(ctx, tt.entity, tt.values); err == nil {
+			t.Errorf("%s: no error", tt.name)
+		}
 	}
 }

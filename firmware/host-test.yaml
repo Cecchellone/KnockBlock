@@ -5,7 +5,7 @@
 # Plaintext Native API on port 6053; no secrets needed.
 
 substitutions:
-  # Short, so tests can wait for the watchdog.
+  # Short, so tests can wait for sources to expire.
   watchdog_timeout: 10s
 
 esphome:
@@ -21,7 +21,7 @@ external_components:
   - source:
       type: local
       path: components
-    components: [knockblock_i18n]
+    components: [knockblock_i18n, knockblock_presence]
 
 api:
   reboot_timeout: 0s
@@ -30,8 +30,10 @@ script:
   - id: apply_status
     then:
       - logger.log:
-          format: "Status %s, language %s, label '%s'"
+          format: "Status %s, language %s, label '%s', app '%s', PC '%s'"
           args:
             - id(status).current_option().c_str()
             - id(display_language).current_option().c_str()
             - id(status_label).state.c_str()
+            - id(active_app).state.c_str()
+            - id(active_pc).state.c_str()

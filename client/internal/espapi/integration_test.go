@@ -189,3 +189,63 @@ func TestIntegrationKeyErrors(t *testing.T) {
 		})
 	}
 }
+
+// Several PCs report through report_presence: the strongest live status
+// wins, with its app and PC; a PC that stops reporting expires.
+func TestIntegrationPresence(t *testing.T) {
+	c, ents := integrationConn(t)
+	ctx := context.Background()
+	find := func(kind EntityKind, id string) Entity {
+		t.Helper()
+		e, ok := ents.Find(kind, id)
+		if !ok {
+			t.Fatalf("device has no %v %q", kind, id)
+		}
+		return e
+	}
+	status := find(KindSelect, "status").Key
+	app := find(KindTextSensor, "active_app").Key
+	pc := find(KindTextSensor, "active_pc").Key
+	report := find(KindAction, "report_presence")
+
+	states := &stateTracker{values: map[uint32]string{}}
+	must(t, c.SubscribeStates(ctx, states.set))
+	send := func(pcName, st, appName string) {
+		t.Helper()
+		must(t, c.ExecuteAction(ctx, report, map[string]string{"pc": pcName, "status": st, "app": appName}))
+	}
+	expect := func(st, appName, pcName string, timeout time.Duration) {
+		t.Helper()
+		states.waitFor(t, status, st, timeout)
+		states.waitFor(t, app, appName, time.Second)
+		states.waitFor(t, pc, pcName, time.Second)
+	}
+
+	send("PC-STUDIO", "mic", "Discord")
+	expect("mic", "Discord", "PC-STUDIO", 5*time.Second)
+	send("LAPTOP", "call", "Teams")
+	expect("call", "Teams", "LAPTOP", 5*time.Second)
+
+	// An unknown status is ignored.
+	send("PC-STUDIO", "bogus", "x")
+	time.Sleep(500 * time.Millisecond)
+	expect("call", "Teams", "LAPTOP", time.Second)
+
+	// LAPTOP stops reporting while PC-STUDIO keeps going: LAPTOP expires.
+	watchdog := 10 * time.Second
+	if v := os.Getenv("KNOCKBLOCK_ITEST_WATCHDOG"); v != "" {
+		d, err := time.ParseDuration(v)
+		must(t, err)
+		watchdog = d
+	}
+	deadline := time.Now().Add(watchdog + 3*time.Second)
+	for time.Now().Before(deadline) && states.get(status) == "call" {
+		send("PC-STUDIO", "mic", "Discord")
+		time.Sleep(watchdog / 4)
+	}
+	expect("mic", "Discord", "PC-STUDIO", time.Second)
+
+	// Reporting offline removes the PC at once.
+	send("PC-STUDIO", "offline", "")
+	expect("offline", "", "", 5*time.Second)
+}

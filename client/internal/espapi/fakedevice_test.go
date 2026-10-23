@@ -18,6 +18,7 @@ const (
 	keyLanguage    = 102
 	keyHeartbeat   = 103
 	keyStatusLabel = 104
+	keyReport      = 105
 )
 
 // fakeDevice is a minimal ESPHome device for tests: it speaks the server
@@ -40,6 +41,7 @@ type fakeDevice struct {
 	presses   int
 	pings     int
 	pongs     int
+	reports   [][]string // report_presence calls: pc, status, app
 	hello     *pb.HelloRequest
 	gotBye    bool
 	conn      net.Conn
@@ -151,6 +153,11 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 		// No object_id: the client must derive it from the name.
 		d.send(&pb.ListEntitiesButtonResponse{Key: keyHeartbeat, Name: "Heartbeat"})
 		d.send(&pb.ListEntitiesTextSensorResponse{ObjectId: "status_label", Key: keyStatusLabel, Name: "Status label"})
+		d.send(&pb.ListEntitiesServicesResponse{Name: "report_presence", Key: keyReport, Args: []*pb.ListEntitiesServicesArgument{
+			{Name: "pc", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_STRING},
+			{Name: "status", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_STRING},
+			{Name: "app", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_STRING},
+		}})
 		d.send(&pb.ListEntitiesSwitchResponse{ObjectId: "other", Key: 999, Name: "Other"}) // not handled
 		d.send(&pb.ListEntitiesDoneResponse{})
 	case *pb.SubscribeStatesRequest:
@@ -169,6 +176,16 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 		}
 		d.mu.Unlock()
 		d.send(&pb.SelectStateResponse{Key: m.GetKey(), State: m.GetState()})
+	case *pb.ExecuteServiceRequest:
+		if m.GetKey() == keyReport {
+			var call []string
+			for _, a := range m.GetArgs() {
+				call = append(call, a.GetString_())
+			}
+			d.mu.Lock()
+			d.reports = append(d.reports, call)
+			d.mu.Unlock()
+		}
 	case *pb.ButtonCommandRequest:
 		d.mu.Lock()
 		if m.GetKey() == keyHeartbeat {

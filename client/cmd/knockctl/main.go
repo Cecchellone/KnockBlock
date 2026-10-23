@@ -8,6 +8,8 @@
 //	knockctl [flags] status <id>        set the status (free, mic, camera, call, dnd, offline)
 //	knockctl [flags] lang <code>        set the display language (en, it, ...)
 //	knockctl [flags] heartbeat          press the heartbeat button
+//	knockctl [flags] report <pc> <status> [app]
+//	                                    report a PC's status, as the tray app does
 //
 // The encryption key can also be given in the KNOCKBLOCK_KEY environment
 // variable, which keeps it out of the shell history.
@@ -44,7 +46,7 @@ func run() error {
 	debugMem := flag.Duration("debug-mem", 0, "log memory statistics at this interval (0 = off)")
 	verbose := flag.Bool("v", false, "debug logging")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat\n\nflags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|report <pc> <status> [app]\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -91,7 +93,7 @@ func run() error {
 	switch cmd := args[0]; cmd {
 	case "list":
 		for _, e := range ents {
-			fmt.Printf("%-11s %-18s key=%-10d %q %v\n", e.Kind, e.ObjectID, e.Key, e.Name, e.Options)
+			fmt.Printf("%-11s %-18s key=%-10d %q %v%v\n", e.Kind, e.ObjectID, e.Key, e.Name, e.Options, e.Args)
 		}
 		return nil
 	case "watch":
@@ -111,6 +113,19 @@ func run() error {
 			return errors.New("device has no heartbeat button")
 		}
 		return conn.PressButton(cmdCtx, e.Key)
+	case "report":
+		if len(args) < 3 || len(args) > 4 {
+			return errors.New("usage: knockctl report <pc> <status> [app]")
+		}
+		e, ok := ents.Find(espapi.KindAction, "report_presence")
+		if !ok {
+			return errors.New("device has no report_presence action")
+		}
+		app := ""
+		if len(args) == 4 {
+			app = args[3]
+		}
+		return conn.ExecuteAction(cmdCtx, e, map[string]string{"pc": args[1], "status": args[2], "app": app})
 	default:
 		flag.Usage()
 		return fmt.Errorf("unknown command %q", cmd)

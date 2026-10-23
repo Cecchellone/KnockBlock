@@ -1,7 +1,8 @@
 # KnockBlock as a remote ESPHome package: the whole firmware for the Waveshare
-# ESP32-C6-LCD-1.47, fetched from GitHub together with the knockblock_i18n
-# external component. Nothing to copy except a short device config, e.g. in
-# the Home Assistant ESPHome add-on (see examples/remote-package.yaml):
+# ESP32-C6-LCD-1.47, fetched from GitHub together with its external
+# components (knockblock_i18n, knockblock_presence). Nothing to copy except
+# a short device config, e.g. in the Home Assistant ESPHome add-on (see
+# examples/remote-package.yaml):
 #
 #   substitutions:
 #     name: knockblock
@@ -38,5 +39,5 @@ external_components:
       url: https://github.com/Cecchellone/KnockBlock
       ref: ${knockblock_ref}
       path: firmware/components
-    components: [knockblock_i18n]
+    components: [knockblock_i18n, knockblock_presence]
     refresh: 1d

@@ -1,18 +1,20 @@
 # Shared KnockBlock logic, used unchanged by the real board (knockblock.yaml)
 # and by the host test build (host-test.yaml): the entities exposed over the
-# Native API, the heartbeat watchdog and the localized status label.
+# Native API, the combined presence of every PC and the localized status
+# label. See docs/presence.md.
 #
-# The including file must also load the knockblock_i18n external component
-# (from this repository's firmware/components, locally or from GitHub) and
-# define a script with id `apply_status` that shows
-# the current status (LED and display on the board, a log line on the host).
-# It runs after every change of `status` or `display_language`, once
-# `status_label` holds the new text.
+# The including file must also load the knockblock_i18n and
+# knockblock_presence external components (from this repository's
+# firmware/components, locally or from GitHub) and define a script with id
+# `apply_status` that shows the current status (LED and display on the
+# board, a log line on the host). It runs after every change of `status` or
+# `display_language`, once `status_label`, `active_app` and `active_pc` hold
+# the new values.
 
 substitutions:
-  # Without a heartbeat (or a status change) for this long, the status
-  # becomes `offline`, so the light does not stay on "call" after the PC
-  # shuts down (CLAUDE.md §4).
+  # A source (a PC, or the manual source) that sends nothing for this long
+  # is dropped, so the light does not stay on "call" after a PC shuts down
+  # (CLAUDE.md §4). With no source left the status is `offline`.
   watchdog_timeout: 120s
 
 knockblock_i18n:
@@ -22,25 +24,43 @@ knockblock_i18n:
   # One file per language; the file name is the language code.
   languages: !include_dir_named ../locales
 
+knockblock_presence:
+  id: presence
+  status_select: status
+  app_sensor: active_app
+  pc_sensor: active_pc
+  timeout: ${watchdog_timeout}
+
 logger:
 
+api:
+  actions:
+    # Called by every PC app: its name, its status ID and the app causing it
+    # (empty if none), at least every ${watchdog_timeout}. Status `offline`
+    # removes the PC at once (e.g. on shutdown).
+    - action: report_presence
+      variables:
+        pc: string
+        status: string
+        app: string
+      then:
+        - lambda: 'id(presence).report(pc, status, app);'
+
 select:
-  # Language-neutral status IDs; the display label is localized separately.
+  # The combined status, as language-neutral IDs; the display label is
+  # localized separately. Setting it directly (Home Assistant, knockctl)
+  # reports it as the "manual" source, kept alive by the heartbeat button.
   - platform: template
     id: status
     name: Status
     icon: mdi:door
     options: [free, mic, camera, call, dnd, offline]
     initial_option: offline
-    optimistic: true
     restore_value: false
+    set_action:
+      - lambda: 'id(presence).report(StringRef(), x, StringRef());'
     on_value:
       - script.execute: status_changed
-      - if:
-          condition:
-            lambda: 'return x != "offline";'
-          then:
-            - script.execute: heartbeat_watchdog
 
   - platform: template
     id: display_language
@@ -56,14 +76,15 @@ select:
       - script.execute: status_changed
 
 button:
-  # Pressed periodically by the PC app.
+  # Keeps a status set directly on the `status` select alive. PC apps use
+  # report_presence instead.
   - platform: template
     id: heartbeat
     name: Heartbeat
     icon: mdi:heart-pulse
     entity_category: diagnostic
     on_press:
-      - script.execute: heartbeat_watchdog
+      - lambda: 'id(presence).refresh(StringRef());'
 
 text_sensor:
   # The text shown on the display, in the display language.
@@ -74,18 +95,21 @@ text_sensor:
     entity_category: diagnostic
     update_interval: never
 
-script:
-  - id: heartbeat_watchdog
-    mode: restart
-    then:
-      - delay: ${watchdog_timeout}
-      - logger.log:
-          level: WARN
-          format: "No heartbeat for ${watchdog_timeout}: status set to offline"
-      - select.set:
-          id: status
-          option: offline
+  # App and PC causing the current status (empty when none, or when the
+  # status was set manually).
+  - platform: template
+    id: active_app
+    name: Active app
+    icon: mdi:application-outline
+    update_interval: never
 
+  - platform: template
+    id: active_pc
+    name: Active PC
+    icon: mdi:monitor
+    update_interval: never
+
+script:
   - id: status_changed
     mode: queued
     then:
