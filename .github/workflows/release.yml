@@ -153,6 +153,7 @@ jobs:
     name: Install and uninstall the MSI on Windows
     needs: windows-installer
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -180,8 +181,25 @@ jobs:
           New-Item -ItemType Directory -Force $cfgDir | Out-Null
           Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
 
+          # Waits for one process only, with a deadline. Start-Process -Wait
+          # also waits for every process it starts, so it never returns when
+          # Restart Manager restarts the app under msiexec.
+          function Wait-Bounded($p, $seconds, $what) {
+            $null = $p.Handle # keeps ExitCode readable after the exit
+            if (-not $p.WaitForExit($seconds * 1000)) {
+              Write-Host "::error::$what still running after $seconds s"
+              Get-Content msi.log -ErrorAction SilentlyContinue | Select-Object -Last 40
+              Get-Content $log -Tail 30 -ErrorAction SilentlyContinue
+              Get-Process knockblock, msiexec -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime, Path
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw "$what timed out"
+            }
+            $p.WaitForExit() # flushes ExitCode
+          }
           function Msi($arguments) {
-            $p = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            Write-Host "==> msiexec $arguments"
+            $p = Start-Process msiexec.exe -ArgumentList $arguments -PassThru
+            Wait-Bounded $p 300 "msiexec $arguments"
             if ($p.ExitCode -ne 0) { Get-Content msi.log -ErrorAction SilentlyContinue | Select-Object -Last 60; throw "msiexec $arguments failed: $($p.ExitCode)" }
           }
           function Autostart { (Get-ItemProperty $run -Name KnockBlock -ErrorAction SilentlyContinue).KnockBlock }
@@ -206,7 +224,8 @@ jobs:
           Write-Host "Idle private working set: $kib KiB (target <= 15360, ceiling 20480)"
           if ($kib -gt 20480) { throw "private working set $kib KiB exceeds the 20 MB ceiling" }
           # A second start must exit at once (single instance).
-          $second = Start-Process $machineExe -PassThru -Wait
+          $second = Start-Process $machineExe -PassThru
+          Wait-Bounded $second 60 'second instance'
           if ($second.ExitCode -ne 0) { throw "second instance exit code $($second.ExitCode)" }
           Stop-Process -Id $app.Id
 
@@ -218,7 +237,9 @@ jobs:
           foreach ($lang in 'en', 'it') {
             Set-Content -Path (Join-Path $cfgDir 'config.json') -Value "{`"language`": `"$lang`"}"
             $png = Join-Path (Resolve-Path screenshots) "settings-$lang.png"
-            $p = Start-Process $machineExe -ArgumentList '-settings-smoke', "`"$png`"" -PassThru -Wait
+            Write-Host "==> settings window ($lang)"
+            $p = Start-Process $machineExe -ArgumentList '-settings-smoke', "`"$png`"" -PassThru
+            Wait-Bounded $p 120 "settings window ($lang)"
             Select-String -Path $log -Pattern 'settings smoke test|private_working_set' | Select-Object -Last 2 | ForEach-Object { $_.Line }
             if ($p.ExitCode -ne 0) { Get-Content $log -Tail 20; throw "settings window ($lang) failed: exit code $($p.ExitCode)" }
             foreach ($tab in 1..4) {
