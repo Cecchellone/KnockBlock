@@ -170,6 +170,25 @@ jobs:
           if ($second.ExitCode -ne 0) { throw "second instance exit code $($second.ExitCode)" }
           Stop-Process -Id $app.Id
 
+          # The settings window opens on a real Windows, in English and
+          # Italian, with all its controls; screenshots are kept as an
+          # artifact and printed (base64) for reviewers without access to
+          # artifacts.
+          New-Item -ItemType Directory -Force screenshots | Out-Null
+          foreach ($lang in 'en', 'it') {
+            Set-Content -Path (Join-Path $cfgDir 'config.json') -Value "{`"language`": `"$lang`"}"
+            $png = Join-Path (Resolve-Path screenshots) "settings-$lang.png"
+            $p = Start-Process $exe -ArgumentList '-settings-smoke', "`"$png`"" -PassThru -Wait
+            Select-String -Path $log -Pattern 'settings smoke test|private_working_set' | Select-Object -Last 2 | ForEach-Object { $_.Line }
+            if ($p.ExitCode -ne 0) { Get-Content $log -Tail 20; throw "settings window ($lang) failed: exit code $($p.ExitCode)" }
+            if (-not (Test-Path $png)) { throw "no settings screenshot for $lang" }
+            $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($png))
+            Write-Host "::group::settings-$lang.png (base64)"
+            $b64 -split '(.{76})' | Where-Object { $_ } | ForEach-Object { Write-Host "PNG-$lang $_" }
+            Write-Host "::endgroup::"
+          }
+          Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
+
           Msi "/x `"$msi`" /qn /l*v msi.log"
           if (Test-Path $exe) { throw "knockblock.exe left after uninstall" }
           if (Autostart) { throw "Run value left after uninstall" }
@@ -181,6 +200,13 @@ jobs:
           if (Autostart) { throw "Run value written despite AUTOSTART=0" }
           Msi "/x `"$msi`" /qn /l*v msi.log"
           Write-Host "AUTOSTART=0 respected"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: settings-window-screenshots
+          path: screenshots/*.png
+          if-no-files-found: ignore
 
   publish:
     name: Publish GitHub release

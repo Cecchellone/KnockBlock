@@ -29,6 +29,8 @@ changes per minor version.
   also during calls. It can be turned off in the settings.
 - Settings for the light's display orientation and for the doorbell.
 - `knockctl ring` and `knockctl flip on|off` for trying them out.
+- The settings are a native Windows window instead of a page in the
+  browser. It exists only while open.
 
 ## [0.1.0]
 

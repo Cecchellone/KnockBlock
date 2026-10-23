@@ -62,8 +62,9 @@ Firmware, on the Waveshare ESP32-C6-LCD-1.47:
 
 Windows app:
 
-- [ ] Install the MSI. On first start the settings page opens in the
-      browser.
+- [ ] Install the MSI. On first start the settings window opens; it looks
+      right at 100 % and 150 % display scaling, and Tab, Enter (Save) and Esc
+      (Cancel) work.
 - [ ] Test connection works with the right key, and reports a clear error
       with a wrong key or address.
 - [ ] Save. The tray icon turns green and the light shows "Free".

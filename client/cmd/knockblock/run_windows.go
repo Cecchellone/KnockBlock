@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"time"
 
@@ -23,16 +25,18 @@ import (
 	"github.com/Cecchellone/KnockBlock/client/locales"
 )
 
-func run(debugLog bool, debugMem time.Duration) error {
+func run(o options) error {
 	// One instance per user session: autostart plus a manual start must
-	// not show two icons.
-	name, _ := windows.UTF16PtrFromString(`Local\KnockBlockTray`)
-	mutex, err := windows.CreateMutex(nil, false, name)
-	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
-		return nil
-	}
-	if err == nil {
-		defer windows.CloseHandle(mutex)
+	// not show two icons. The settings smoke test runs beside the tray.
+	if o.settingsSmoke == "" {
+		name, _ := windows.UTF16PtrFromString(`Local\KnockBlockTray`)
+		mutex, err := windows.CreateMutex(nil, false, name)
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			return nil
+		}
+		if err == nil {
+			defer windows.CloseHandle(mutex)
+		}
 	}
 
 	// Keep the heap small (CLAUDE.md §2.1): a soft limit makes the GC work
@@ -51,16 +55,16 @@ func run(debugLog bool, debugMem time.Duration) error {
 	}
 	defer logs.Close()
 	level := slog.LevelInfo
-	if debugLog {
+	if o.debug {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: level}))
 	log.Info("starting", "version", version)
 
-	if debugMem > 0 {
+	if o.debugMem > 0 {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go memdebug.Run(ctx, log, debugMem)
+		go memdebug.Run(ctx, log, o.debugMem)
 	}
 
 	cfgPath, err := config.Path()
@@ -72,17 +76,19 @@ func run(debugLog bool, debugMem time.Duration) error {
 		return err
 	}
 	hostname, _ := os.Hostname()
-	settings := settingsui.New(settingsui.Deps{
+	settings := settingsui.NewWindow(settingsui.Deps{
 		ConfigPath:      cfgPath,
 		Catalog:         catalog,
 		SystemLanguages: i18n.SystemLanguages,
 		Hostname:        hostname,
 		Autostart:       autostartSetting{},
-		Browse:          browse,
 		Logger:          log,
 		ClientInfo:      "KnockBlock " + version + " (settings)",
 	})
 	defer settings.Close()
+	if o.settingsSmoke != "" {
+		return settingsSmoke(settings, o.settingsSmoke, log)
+	}
 	return tray.Run(tray.Options{
 		ConfigPath:   cfgPath,
 		Version:      version,
@@ -91,15 +97,34 @@ func run(debugLog bool, debugMem time.Duration) error {
 	})
 }
 
-// autostartSetting adapts the autostart package to the settings page.
+// settingsSmoke opens the settings window, checks it has its controls, saves
+// a screenshot and logs the memory it uses while open, then closes it.
+func settingsSmoke(w *settingsui.Window, file string, log *slog.Logger) error {
+	if err := w.Open(); err != nil {
+		log.Error("settings smoke test", "err", err)
+		return err
+	}
+	time.Sleep(time.Second) // let it paint
+	out, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+	controls, err := w.Capture(out)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	runtime.GC()
+	memdebug.Log(log)
+	w.Close()
+	log.Info("settings smoke test", "controls", controls, "screenshot", file, "err", err)
+	if err == nil && controls < 30 {
+		err = fmt.Errorf("settings window has %d controls", controls)
+	}
+	return err
+}
+
+// autostartSetting adapts the autostart package to the settings window.
 type autostartSetting struct{}
 
 func (autostartSetting) Enabled() bool     { return autostart.Enabled() }
 func (autostartSetting) Set(on bool) error { return autostart.Set(on) }
-
-// browse opens url in the default browser.
-func browse(url string) error {
-	verb, _ := windows.UTF16PtrFromString("open")
-	target, _ := windows.UTF16PtrFromString(url)
-	return windows.ShellExecute(0, verb, target, nil, nil, windows.SW_SHOWNORMAL)
-}

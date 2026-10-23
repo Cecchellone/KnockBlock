@@ -30,11 +30,9 @@
   "settings.title": "Impostazioni di KnockBlock",
   "settings.device": "Luce",
   "settings.host": "Indirizzo",
-  "settings.host_help": "Nome host o indirizzo IP della luce, ad es. knockblock.local.",
   "settings.port": "Porta",
   "settings.key": "Chiave di cifratura",
-  "settings.key_help": "La api_encryption_key del firmware della luce. Lascia vuoto per mantenere la chiave salvata.",
-  "settings.key_saved": "È salvata una chiave.",
+  "settings.key_saved": "Chiave salvata (lascia vuoto per mantenerla)",
   "settings.key_remove": "Rimuovi la chiave salvata",
   "settings.test": "Prova connessione",
   "settings.testing": "Prova in corso…",
@@ -64,11 +62,10 @@
   "settings.names": "Nomi delle app",
   "settings.names_help": "Uno per riga: eseguibile = nome, ad es. myrecorder.exe = Registratore.",
   "settings.save": "Salva",
-  "settings.saved": "Salvato. KnockBlock usa le nuove impostazioni.",
+  "settings.cancel": "Annulla",
   "settings.error": "Non salvato: {error}",
   "settings.err_host": "l'indirizzo è vuoto",
   "settings.err_port": "la porta deve essere tra 1 e 65535",
   "settings.err_key": "la chiave deve essere quella in base64 del firmware (32 byte)",
-  "settings.err_names": "la riga {line} dei nomi delle app non è \"eseguibile = nome\"",
-  "settings.footer": "Questa pagina è raggiungibile solo da questo PC e si chiude dopo {minutes} minuti di inattività."
+  "settings.err_names": "la riga {line} dei nomi delle app non è \"eseguibile = nome\""
 }

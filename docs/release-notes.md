@@ -11,10 +11,10 @@ with Windows:
 msiexec /i KnockBlock-<version>.msi AUTOSTART=0
 ```
 
-On first start the app opens its settings page in your browser: enter the
-light's address (default `knockblock.local`) and the API encryption key, press
-**Test connection**, then **Save**. You can reopen the page from the tray
-menu ("Settings…"). The tray icon is grey while the light is unreachable.
+On first start the app opens its settings window: enter the light's address
+(default `knockblock.local`) and the API encryption key, press **Test
+connection**, then **Save**. You can reopen the window from the tray menu
+("Settings…"). The tray icon is grey while the light is unreachable.
 
 Uninstall from Settings → Apps.
 
