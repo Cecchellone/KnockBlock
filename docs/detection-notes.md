@@ -5,8 +5,10 @@ reports microphone and camera use. Fill this in from `knockctl detect` runs.
 
 The **microphone** comes from the Windows audio sessions
 (WASAPI): an app uses it when it has an *active capture session* on a
-recording device. The consent store is still used for the **camera**, and
-for the microphone if the audio sessions cannot be read.
+recording device. The **camera** comes from Media Foundation's sensor
+activity reports (`IMFSensorActivityMonitor`): an app uses it while it
+*streams* from a camera. The consent store is the fallback for either when
+those cannot be read.
 
 ## How to check
 
@@ -46,6 +48,36 @@ session rule: **in use = a capture session in the Active state**.
 | Zoom | | | | | |
 | Browser call (Meet) | | | | | |
 
+### Camera (Windows 11 build 26300, October 2026)
+
+- Since mid-October 2026 the consent store's `LastUsedTimeStart` /
+  `LastUsedTimeStop` were no longer written, for the camera nor the
+  microphone: the Windows Camera app and ffmpeg streaming the webcam left no
+  trace. Usage history moved to a database under
+  `C:\ProgramData\Microsoft\Windows\CapabilityAccessManager`
+  (`HKLM\...\CapabilityAccessManager\CapabilityUsageHistory\DatabaseRoot`),
+  readable only by administrators. KnockBlock never saw the webcam.
+- `IMFSensorActivityMonitor` reports every program that opens a camera and
+  whether it streams. Checked with the Camera app and ffmpeg (DirectShow):
+  both show as streaming from the Logi C270 while capturing, and stop when
+  they stop.
+- NVIDIA Broadcast's virtual camera is not a Windows camera: an app reading
+  it does not appear; NVIDIA Broadcast itself streams the real webcam while
+  any app reads its camera, and only then. KnockBlock reports that as the
+  camera used by the app in the call (the microphone app), or as "NVIDIA
+  Broadcast" when nothing records.
+- Programs that only open a camera to read its formats (NVIDIA Broadcast
+  probing, Phone Link's virtual camera) do not stream and do not count.
+
+### Muted calls
+
+- An app muted *inside* a call (Discord, Teams) may keep recording, so its
+  capture session stays active. KnockBlock sees a mute only when Windows
+  knows it: the recording device muted (sound settings, a mute key) or the
+  app's audio session muted. `knockctl detect live` prints, every second,
+  each app's recording and playback sessions with their mute state and
+  level, to check how an app behaves.
+
 ## Known caveats
 
 - Browsers show as the browser ("Chrome", "Edge") unless a window title
@@ -55,6 +87,6 @@ session rule: **in use = a capture session in the Active state**.
   microphone is the one reported. Other apps that keep the microphone open
   outside calls go in the ignore list (settings, Apps tab).
 - An app muted inside a call may keep its capture session active, so it
-  still shows as "mic".
+  still shows as "mic" (see Muted calls above).
 - The consent store is per user (HKCU): apps running as another user are
   not seen.
