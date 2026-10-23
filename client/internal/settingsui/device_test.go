@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/config"
 	"github.com/Cecchellone/KnockBlock/client/internal/espapi"
@@ -124,18 +125,88 @@ func TestDeviceSettings(t *testing.T) {
 	}
 }
 
-func TestPercentages(t *testing.T) {
+func TestSliders(t *testing.T) {
 	m, _, _ := newModel(t, nil)
-	p := m.Percentages(true)
-	if len(p) != 11 || p[0] != (Choice{"0", "Spento"}) || p[10] != (Choice{"100", "100 %"}) {
-		t.Errorf("percentages %v", p)
+	if lo, hi, step := SliderRange(SliderBacklight); lo != 0 || hi != 100 || step != 5 {
+		t.Errorf("backlight range %d..%d/%d", lo, hi, step)
 	}
-	for in, want := range map[int]int{0: 0, 4: 10, 35: 40, 34: 30, 100: 100, 120: 100} {
-		if got := NearestPercent(in, true); got != want {
-			t.Errorf("NearestPercent(%d) = %d, want %d", in, got, want)
+	if lo, _, _ := SliderRange(SliderLED); lo != 5 {
+		t.Errorf("LED minimum %d, want the firmware's 5", lo)
+	}
+	if got := m.SliderLabel(SliderBacklight, 0); got != "Spento" {
+		t.Errorf("backlight 0 = %q", got)
+	}
+	if got := m.SliderLabel(SliderLED, 35); got != "35 %" {
+		t.Errorf("LED 35 = %q", got)
+	}
+	for _, tt := range []struct {
+		sl      Slider
+		in, out int
+	}{{SliderBacklight, 37, 35}, {SliderBacklight, 38, 40}, {SliderBacklight, -3, 0}, {SliderLED, 0, 5}, {SliderLED, 120, 100}} {
+		if got := snap(tt.sl, tt.in); got != tt.out {
+			t.Errorf("snap(%d, %d) = %d, want %d", tt.sl, tt.in, got, tt.out)
 		}
 	}
-	if NearestPercent(0, false) != 10 {
-		t.Error("without off, 0 rounds up to 10")
+}
+
+// waitCommands waits until the light received n commands and returns them.
+func (f *fakeLight) waitCommands(t *testing.T, n int) []string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		f.mu.Lock()
+		got := slices.Clone(f.commands)
+		f.mu.Unlock()
+		if len(got) >= n || time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestPreviewRevertApply(t *testing.T) {
+	light := &fakeLight{}
+	d, err := readDevice(context.Background(), light)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// Dragging shows the value on the light at once; saved stays.
+	d.Preview(SliderBacklight, 80)
+	if got := light.waitCommands(t, 1); !slices.Equal(got, []string{"4=true/0.80"}) {
+		t.Fatalf("preview sent %v", got)
+	}
+	d.Preview(SliderLED, 20)
+	light.waitCommands(t, 2)
+	if d.Settings().Backlight != 35 || d.Settings().LED != 60 {
+		t.Errorf("preview changed the saved settings: %+v", d.Settings())
+	}
+
+	// Closing without saving puts the saved values back.
+	if err := d.Revert(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := light.waitCommands(t, 4); !slices.Equal(got[2:], []string{"4=true/0.35", "5=60"}) {
+		t.Errorf("revert sent %v", got)
+	}
+
+	// Saving after a preview to the same value sends nothing more; a value
+	// the light does not show yet is sent.
+	light.mu.Lock()
+	light.commands = nil
+	light.mu.Unlock()
+	d.Preview(SliderBacklight, 50)
+	light.waitCommands(t, 1)
+	s := d.Settings()
+	s.Backlight, s.LED = 50, 40
+	if err := d.Apply(context.Background(), s); err != nil {
+		t.Fatal(err)
+	}
+	if got := light.waitCommands(t, 2); !slices.Equal(got, []string{"4=true/0.50", "5=40"}) {
+		t.Errorf("apply sent %v", got)
+	}
+	if err := d.Revert(context.Background()); err != nil || len(light.waitCommands(t, 3)) != 2 {
+		t.Errorf("revert after saving sent something (%v)", err)
 	}
 }

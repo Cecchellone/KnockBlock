@@ -41,9 +41,19 @@ changes per minor version.
 - Updating closes the running app (it says it is updating and tells the
   light it goes offline) and starts it again; the new version says it was
   updated.
-- Notifications are plain Windows notifications, without a custom sound.
-- The settings window has tabs: Connection, Light, This PC, Apps. The
-  Light tab reads the light's own settings (display language, orientation,
+- Notifications are plain Windows notifications. A setting chooses how they
+  show: none, text only (default), sound only (Windows' notification
+  sound), or text and sound. Notifications, the doorbell's included, did
+  not show at all before: the data passed to Windows was laid out wrong.
+- Double-clicking the tray icon opens the settings.
+- The display and LED brightness are sliders; the light follows them while
+  you drag, and goes back if you close the window without saving.
+- The microphone is detected from the Windows audio sessions: an app counts
+  only while it is really recording. Discord no longer shows as using the
+  microphone when it is just open, and an entry left by an old version of
+  an app no longer counts. `knockctl detect` lists the audio sessions.
+- The settings window has tabs: Connection, Device, This PC, Apps. The
+  Device tab reads the light's own settings (display language, orientation,
   display brightness, LED brightness, privacy) and saves them on the light.
 - Saving the settings no longer drops the connection unless the address or
   the key changed.

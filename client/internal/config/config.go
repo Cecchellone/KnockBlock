@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 )
 
@@ -30,10 +31,15 @@ type Config struct {
 	PCName string `json:"pc_name,omitempty"`
 	// SendAppNames reports which app uses the mic/camera.
 	SendAppNames bool `json:"send_app_names"`
-	// Notifications enables notifications for problems that last.
-	Notifications bool `json:"notifications"`
-	// Doorbell shows a notification, with sound, when the light's doorbell
-	// button is pressed.
+	// Notify is how notifications show: NotifyOff, NotifySilent,
+	// NotifySound or NotifyFull. It applies to every notification (the
+	// light unreachable, the doorbell, updates).
+	Notify string `json:"notify"`
+	// LegacyNotifications is the old on/off switch, read from older files
+	// and turned into Notify by Load; never written.
+	LegacyNotifications *bool `json:"notifications,omitempty"`
+	// Doorbell makes this PC notify when the light's doorbell button is
+	// pressed.
 	Doorbell bool `json:"doorbell"`
 	// Ignore lists executables or Store packages not to report.
 	Ignore []string `json:"ignore,omitempty"`
@@ -47,9 +53,20 @@ const (
 	DefaultPort = 6053
 )
 
+// Notification modes (Config.Notify).
+const (
+	NotifyOff    = "off"    // no notifications
+	NotifySilent = "silent" // the notification, without sound
+	NotifySound  = "sound"  // only the Windows notification sound
+	NotifyFull   = "full"   // the notification with the Windows sound
+)
+
+// NotifyModes lists the notification modes in the order shown.
+var NotifyModes = []string{NotifyOff, NotifySilent, NotifySound, NotifyFull}
+
 // Default returns the configuration of a fresh install.
 func Default() Config {
-	return Config{Host: DefaultHost, Port: DefaultPort, SendAppNames: true, Notifications: true, Doorbell: true}
+	return Config{Host: DefaultHost, Port: DefaultPort, SendAppNames: true, Notify: NotifySilent, Doorbell: true}
 }
 
 // Path returns %APPDATA%\KnockBlock\config.json (the user config directory
@@ -73,9 +90,17 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return c, fmt.Errorf("config: %w", err)
 	}
+	c.Notify = "" // to tell a file without it
 	if err := json.Unmarshal(data, &c); err != nil {
 		return Default(), fmt.Errorf("config: %s: %w", path, err)
 	}
+	if !slices.Contains(NotifyModes, c.Notify) {
+		c.Notify = NotifySilent
+		if c.LegacyNotifications != nil && !*c.LegacyNotifications {
+			c.Notify = NotifyOff // notifications were turned off
+		}
+	}
+	c.LegacyNotifications = nil
 	if c.Host == "" {
 		c.Host = DefaultHost
 	}

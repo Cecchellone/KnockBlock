@@ -11,7 +11,6 @@ import (
 	"image/png"
 	"io"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -164,17 +163,18 @@ type win struct {
 	building int // page of the controls being created
 	page     int // page shown
 
-	tabs                                         windows.HWND
-	host, port, key, removeKey, testBtn, result  windows.HWND
-	devStatus, devLang, devFlip, devBacklight    windows.HWND
-	devLED, devPrivacy                           windows.HWND
-	pcName, lang                                 windows.HWND
-	sendApps, doorbell, notifications, autostart windows.HWND
-	ignore, names                                windows.HWND
-	langChoices, devLangChoices, flipChoices     []Choice
-	backlightChoices, ledChoices                 []Choice
-	cancelTest, cancelDevice                     context.CancelFunc
-	device                                       *Device // nil until read, or if unreachable
+	tabs                                        windows.HWND
+	host, port, key, removeKey, testBtn, result windows.HWND
+	devStatus, devLang, devFlip, devBacklight   windows.HWND
+	devLED, devPrivacy                          windows.HWND // devBacklight, devLED: sliders
+	devBacklightVal, devLEDVal                  windows.HWND // their values
+	pcName, lang                                windows.HWND
+	sendApps, doorbell, notify, autostart       windows.HWND
+	ignore, names                               windows.HWND
+	langChoices, devLangChoices, flipChoices    []Choice
+	notifyChoices                               []Choice
+	cancelTest, cancelDevice                    context.CancelFunc
+	device                                      *Device // nil until read, or if unreachable
 
 	mu        sync.Mutex
 	testMsg   string
@@ -331,6 +331,15 @@ func (c *win) build() {
 	check := func(text string, b box) windows.HWND {
 		return c.add("BUTTON", text, wsTabStop|bsAutoCheckBox|bsMultiline, 0, 0, b)
 	}
+	slider := func(sl Slider, b box) windows.HWND {
+		h := c.add("msctls_trackbar32", "", wsTabStop|tbsHorz|tbsBottom|tbsAutoTicks, 0, 0, b)
+		lo, hi, step := SliderRange(sl)
+		sendMessage(h, tbmSetRange, 1, uintptr(lo)|uintptr(hi)<<16)
+		sendMessage(h, tbmSetTicFreq, uintptr(step*2), 0)
+		sendMessage(h, tbmSetLineSize, 0, uintptr(step))
+		sendMessage(h, tbmSetPageSize, 0, uintptr(step*2))
+		return h
+	}
 	const x, iw, cw = 28, 464, 260 // page left edge, full and combo widths
 
 	c.building = -1
@@ -370,11 +379,11 @@ func (c *win) build() {
 	c.flipChoices = c.model.Orientations()
 	c.devFlip = combo(c.flipChoices, box{x, 161, cw, 23})
 	label(t("settings.display_brightness"), box{x, 194, iw, 16})
-	c.backlightChoices = c.model.Percentages(true)
-	c.devBacklight = combo(c.backlightChoices, box{x, 212, cw, 23})
+	c.devBacklight = slider(SliderBacklight, box{x - 4, 210, cw + 8, 28})
+	c.devBacklightVal = label("", box{x + cw + 12, 216, 80, 16})
 	label(t("settings.led_brightness"), box{x, 245, iw, 16})
-	c.ledChoices = c.model.Percentages(false)
-	c.devLED = combo(c.ledChoices, box{x, 263, cw, 23})
+	c.devLED = slider(SliderLED, box{x - 4, 261, cw + 8, 28})
+	c.devLEDVal = label("", box{x + cw + 12, 267, 80, 16})
 	c.devPrivacy = check(t("settings.privacy"), box{x, 298, iw, 30})
 	c.enableDevice(false)
 
@@ -390,8 +399,10 @@ func (c *win) build() {
 	c.lang = combo(c.langChoices, box{x, 149, cw, 23})
 	c.sendApps = check(t("settings.send_apps"), box{x, 186, iw, 30})
 	c.doorbell = check(t("settings.doorbell"), box{x, 220, iw, 30})
-	c.notifications = check(t("settings.notifications"), box{x, 254, iw, 30})
-	c.autostart = check(t("settings.autostart"), box{x, 288, iw, 30})
+	label(t("settings.notify"), box{x, 256, iw, 16})
+	c.notifyChoices = c.model.NotifyModes()
+	c.notify = combo(c.notifyChoices, box{x, 274, cw, 23})
+	c.autostart = check(t("settings.autostart"), box{x, 306, iw, 30})
 
 	// Apps.
 	c.building = pageApps
@@ -493,8 +504,8 @@ func (c *win) deviceReady() {
 		flip = "on"
 	}
 	selectChoice(c.devFlip, c.flipChoices, flip)
-	selectChoice(c.devBacklight, c.backlightChoices, strconv.Itoa(NearestPercent(s.Backlight, true)))
-	selectChoice(c.devLED, c.ledChoices, strconv.Itoa(NearestPercent(s.LED, false)))
+	c.setSlider(SliderBacklight, s.Backlight)
+	c.setSlider(SliderLED, s.LED)
 	setCheck(c.devPrivacy, s.Privacy)
 	c.enableDevice(true)
 	if len(s.Languages) == 0 {
@@ -505,9 +516,11 @@ func (c *win) deviceReady() {
 	}
 	if !s.HasBacklight {
 		c.hide(c.devBacklight, true)
+		c.hide(c.devBacklightVal, false)
 	}
 	if !s.HasLED {
 		c.hide(c.devLED, true)
+		c.hide(c.devLEDVal, false)
 	}
 	if !s.HasPrivacy {
 		c.hide(c.devPrivacy, false)
@@ -523,13 +536,51 @@ func (c *win) deviceForm() DeviceSettings {
 	}
 	s.Flip = chosen(c.devFlip, c.flipChoices) == "on"
 	s.Privacy = isChecked(c.devPrivacy)
-	if v, err := strconv.Atoi(chosen(c.devBacklight, c.backlightChoices)); err == nil && v != NearestPercent(s.Backlight, true) {
-		s.Backlight = v // untouched entries keep the exact value read
+	if v := c.sliderValue(SliderBacklight); v != snap(SliderBacklight, s.Backlight) {
+		s.Backlight = v // an untouched slider keeps the exact value read
 	}
-	if v, err := strconv.Atoi(chosen(c.devLED, c.ledChoices)); err == nil && v != NearestPercent(s.LED, false) {
+	if v := c.sliderValue(SliderLED); v != snap(SliderLED, s.LED) {
 		s.LED = v
 	}
 	return s
+}
+
+func (c *win) sliderHandle(sl Slider) (bar, value windows.HWND) {
+	if sl == SliderBacklight {
+		return c.devBacklight, c.devBacklightVal
+	}
+	return c.devLED, c.devLEDVal
+}
+
+func (c *win) setSlider(sl Slider, v int) {
+	bar, value := c.sliderHandle(sl)
+	sendMessage(bar, tbmSetPos, 1, uintptr(snap(sl, v)))
+	setText(value, c.model.SliderLabel(sl, v))
+}
+
+func (c *win) sliderValue(sl Slider) int {
+	bar, _ := c.sliderHandle(sl)
+	return snap(sl, int(sendMessage(bar, tbmGetPos, 0, 0)))
+}
+
+// slid handles WM_HSCROLL from a slider: the value shows next to it and on
+// the light at once (Device.Preview); Save keeps it, closing undoes it.
+func (c *win) slid(bar windows.HWND, code uintptr) {
+	sl := SliderBacklight
+	if bar == c.devLED {
+		sl = SliderLED
+	} else if bar != c.devBacklight {
+		return
+	}
+	v := c.sliderValue(sl)
+	_, value := c.sliderHandle(sl)
+	setText(value, c.model.SliderLabel(sl, v))
+	if code == tbEndTrack {
+		sendMessage(bar, tbmSetPos, 1, uintptr(v)) // onto the step
+	}
+	if c.device != nil {
+		c.device.Preview(sl, v)
+	}
 }
 
 // add creates a child control; layout places it.
@@ -604,7 +655,7 @@ func (c *win) fill(f Form) {
 	selectChoice(c.lang, c.langChoices, f.Language)
 	setCheck(c.sendApps, f.SendApps)
 	setCheck(c.doorbell, f.Doorbell)
-	setCheck(c.notifications, f.Notifications)
+	selectChoice(c.notify, c.notifyChoices, f.Notify)
 	setCheck(c.autostart, f.Autostart)
 }
 
@@ -614,7 +665,7 @@ func (c *win) form() Form {
 		PCName:   getText(c.pcName),
 		Language: chosen(c.lang, c.langChoices),
 		SendApps: isChecked(c.sendApps), Doorbell: isChecked(c.doorbell),
-		Notifications: isChecked(c.notifications), Autostart: isChecked(c.autostart),
+		Notify: chosen(c.notify, c.notifyChoices), Autostart: isChecked(c.autostart),
 		Ignore: strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
 		Names:  strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
 	}
@@ -732,7 +783,13 @@ func (c *win) destroyed() {
 		c.cancelDevice()
 	}
 	if c.device != nil {
-		c.device.Close()
+		// Closed without saving: put back what the sliders previewed (after
+		// Save there is nothing to put back). Off the window thread: it may
+		// wait for the light.
+		go func(d *Device) {
+			d.Revert(context.Background())
+			d.Close()
+		}(c.device)
 	}
 	// A light read that arrived but was not shown yet is closed here; one
 	// still in progress closes itself.
@@ -775,6 +832,9 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 				c.startTest()
 				return 0
 			}
+		case wmHScroll:
+			c.slid(windows.HWND(lParam), wParam&0xffff)
+			return 0
 		case wmCtlColorStatic:
 			// Labels, check boxes and group boxes take the window's
 			// background instead of the grey dialog colour.

@@ -12,7 +12,7 @@ func TestLoadMissingGivesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != DefaultHost || c.Port != DefaultPort || !c.SendAppNames || !c.Notifications {
+	if c.Host != DefaultHost || c.Port != DefaultPort || !c.SendAppNames || c.Notify != NotifySilent {
 		t.Fatalf("defaults %+v", c)
 	}
 	if c.Address() != "knockblock.local:6053" {
@@ -98,5 +98,32 @@ func TestProtectPlainKey(t *testing.T) {
 	}
 	if k, _ := c.Key(); k != "secret" {
 		t.Fatalf("Key = %q", k)
+	}
+}
+
+func TestNotifyMigration(t *testing.T) {
+	tests := []struct{ file, want string }{
+		{`{"notifications": false}`, NotifyOff},
+		{`{"notifications": true}`, NotifySilent},
+		{`{}`, NotifySilent},
+		{`{"notify": "full", "notifications": false}`, NotifyFull},
+		{`{"notify": "loud"}`, NotifySilent},
+	}
+	for _, tt := range tests {
+		path := filepath.Join(t.TempDir(), "config.json")
+		os.WriteFile(path, []byte(tt.file), 0o600)
+		c, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Notify != tt.want || c.LegacyNotifications != nil {
+			t.Errorf("%s: notify %q (legacy %v), want %q", tt.file, c.Notify, c.LegacyNotifications, tt.want)
+		}
+		if err := Save(path, c); err != nil {
+			t.Fatal(err)
+		}
+		if data, _ := os.ReadFile(path); strings.Contains(string(data), `"notifications"`) {
+			t.Errorf("%s: the old field is written back", tt.file)
+		}
 	}
 }

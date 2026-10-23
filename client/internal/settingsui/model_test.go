@@ -41,7 +41,7 @@ func validForm() Form {
 	return Form{
 		Host: " luce.lan ", Port: "6053", Key: validKey,
 		PCName: "STUDIO", Language: "en",
-		SendApps: true, Doorbell: true, Autostart: true,
+		SendApps: true, Doorbell: true, Notify: config.NotifyFull, Autostart: true,
 		Ignore: "obs64.exe\n\n nvidia broadcast.exe ", Names: "rec.exe = Recorder\n",
 	}
 }
@@ -88,7 +88,7 @@ func TestSave(t *testing.T) {
 	}
 	key, _ := cfg.Key()
 	if cfg.Host != "luce.lan" || cfg.PCName != "STUDIO" || cfg.Language != "en" ||
-		!cfg.SendAppNames || cfg.Notifications || !cfg.Doorbell || key != validKey {
+		!cfg.SendAppNames || cfg.Notify != config.NotifyFull || !cfg.Doorbell || key != validKey {
 		t.Errorf("saved %+v (key %q)", cfg, key)
 	}
 	if len(cfg.Ignore) != 2 || cfg.Ignore[1] != "nvidia broadcast.exe" || cfg.AppNames["rec.exe"] != "Recorder" {

@@ -4,10 +4,13 @@ package tray
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/Cecchellone/KnockBlock/client/internal/config"
 )
 
 // Notifications use the tray icon that fyne.io/systray created: its hidden
@@ -22,6 +25,11 @@ const (
 	nimModify     = 0x1
 	nifInfo       = 0x10
 	niifInfo      = 0x1
+	niifNoSound   = 0x10
+
+	sndAsync     = 0x1
+	sndNoDefault = 0x2
+	sndAlias     = 0x10000
 )
 
 var (
@@ -29,6 +37,7 @@ var (
 	shell32           = windows.NewLazySystemDLL("shell32.dll")
 	procGetClassNameW = user32.NewProc("GetClassNameW")
 	procShellNotify   = shell32.NewProc("Shell_NotifyIconW")
+	procPlaySoundW    = windows.NewLazySystemDLL("winmm.dll").NewProc("PlaySoundW")
 
 	findOnce  sync.Once
 	findCB    uintptr
@@ -39,7 +48,12 @@ var (
 	wantClass = windows.StringToUTF16(systrayClass)
 )
 
-// notifyIconData is NOTIFYICONDATAW, as systray declares it.
+// notifyIconData is NOTIFYICONDATAW (shellapi.h). uTimeout and uVersion
+// are a union: one field. systray declares them as two, which shifts
+// szInfoTitle and dwInfoFlags by 4 bytes; it never sets them, but a
+// notification needs them where Windows reads them (the title came out
+// empty and the notification did not show). notify_windows_amd64.go checks
+// the size.
 type notifyIconData struct {
 	Size                       uint32
 	Wnd                        windows.Handle
@@ -48,7 +62,7 @@ type notifyIconData struct {
 	Tip                        [128]uint16
 	State, StateMask           uint32
 	Info                       [256]uint16
-	Timeout, Version           uint32
+	TimeoutOrVersion           uint32
 	InfoTitle                  [64]uint16
 	InfoFlags                  uint32
 	GuidItem                   windows.GUID
@@ -82,8 +96,21 @@ func trayWindow() (windows.HWND, error) {
 }
 
 // showNotification shows a standard Windows notification from the tray
-// icon; Windows decides about sound and display (Focus assist, settings).
-func showNotification(title, body string) error {
+// icon, as mode says (config.Notify*): off, silent, only the Windows
+// notification sound, or the notification with that sound. Windows still
+// decides whether it shows (Do not disturb, notification settings).
+func showNotification(mode, title, body string) error {
+	switch mode {
+	case config.NotifyOff:
+		return nil
+	case config.NotifySound:
+		// The sound Windows plays for notifications (Settings > Sound).
+		alias, _ := windows.UTF16PtrFromString("Notification.Default")
+		if r, _, err := procPlaySoundW.Call(uintptr(unsafe.Pointer(alias)), 0, sndAlias|sndAsync|sndNoDefault); r == 0 {
+			return fmt.Errorf("tray: PlaySound: %w", err)
+		}
+		return nil
+	}
 	hwnd, err := trayWindow()
 	if err != nil {
 		return err
@@ -93,6 +120,9 @@ func showNotification(title, body string) error {
 		ID:        systrayIconID,
 		Flags:     nifInfo,
 		InfoFlags: niifInfo,
+	}
+	if mode != config.NotifyFull {
+		nid.InfoFlags |= niifNoSound
 	}
 	nid.Size = uint32(unsafe.Sizeof(nid))
 	copyUTF16(nid.InfoTitle[:], title)

@@ -77,9 +77,11 @@ type Form struct {
 	RemoveKey bool
 	PCName    string
 	// Language is the app's language code, "" to follow Windows.
-	Language                          string
-	SendApps, Doorbell, Notifications bool
-	Autostart                         bool
+	Language           string
+	SendApps, Doorbell bool
+	// Notify is the notification mode (config.Notify*).
+	Notify    string
+	Autostart bool
 	// Ignore and Names hold one entry per line ("exe = name" for Names).
 	Ignore, Names string
 }
@@ -160,7 +162,7 @@ func (m *Model) Form() Form {
 	return Form{
 		Host: cfg.Host, Port: strconv.Itoa(cfg.Port),
 		PCName: cfg.PCName, Language: cfg.Language,
-		SendApps: cfg.SendAppNames, Doorbell: cfg.Doorbell, Notifications: cfg.Notifications,
+		SendApps: cfg.SendAppNames, Doorbell: cfg.Doorbell, Notify: cfg.Notify,
 		Autostart: m.deps.Autostart.Enabled(),
 		Ignore:    strings.Join(cfg.Ignore, "\n"), Names: strings.Join(names, "\n"),
 	}
@@ -188,6 +190,16 @@ func (m *Model) Orientations() []Choice {
 		{"off", m.T("settings.display_flip_off")},
 		{"on", m.T("settings.display_flip_on")},
 	}
+}
+
+// NotifyModes lists the notification modes: none, silent, sound only, with
+// sound.
+func (m *Model) NotifyModes() []Choice {
+	out := make([]Choice, 0, len(config.NotifyModes))
+	for _, mode := range config.NotifyModes {
+		out = append(out, Choice{mode, m.T("settings.notify_" + mode)})
+	}
+	return out
 }
 
 // apply builds the new configuration from the form, starting from the
@@ -219,7 +231,10 @@ func (m *Model) apply(f Form) (config.Config, error) {
 	cfg.KeyPlain = ""
 	cfg.PCName = strings.TrimSpace(f.PCName)
 	cfg.Language = m.knownLanguage(f.Language)
-	cfg.SendAppNames, cfg.Doorbell, cfg.Notifications = f.SendApps, f.Doorbell, f.Notifications
+	cfg.SendAppNames, cfg.Doorbell = f.SendApps, f.Doorbell
+	if slices.Contains(config.NotifyModes, f.Notify) {
+		cfg.Notify = f.Notify
+	}
 	cfg.Ignore = nil
 	for _, line := range strings.Split(f.Ignore, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
