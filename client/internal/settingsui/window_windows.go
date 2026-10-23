@@ -334,7 +334,10 @@ func (c *win) build() {
 	const x, iw, cw = 28, 464, 260 // page left edge, full and combo widths
 
 	c.building = -1
-	c.tabs = c.add("SysTabControl32", "", wsTabStop|wsClipSiblings, 0, idTabs, box{12, 12, clientW - 24, 372})
+	// Only the strip of tab headers: the pages lie on the window background,
+	// so labels and check boxes match it (the themed tab body is a shade
+	// lighter and would show their rectangles).
+	c.tabs = c.add("SysTabControl32", "", wsTabStop|wsClipSiblings, 0, idTabs, box{12, 12, clientW - 24, 26})
 	for i, key := range []string{"settings.tab_connection", "settings.device", "settings.this_pc", "settings.apps"} {
 		item := tcItem{Mask: tcifText, Text: utf16Ptr(t(key))}
 		sendMessage(c.tabs, tcmInsertItem, uintptr(i), uintptr(unsafe.Pointer(&item)))
