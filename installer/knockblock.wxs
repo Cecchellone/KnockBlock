@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows Installer package for the KnockBlock tray app. Built on Linux with
+  wixl (msitools), which reads this WiX 3 subset; see scripts/build-msi.sh.
+
+  - Per-user install into %LOCALAPPDATA%\Programs\KnockBlock: no
+    administrator rights needed, like the app's own settings (HKCU, %APPDATA%).
+  - Start menu shortcut.
+  - "Start with Windows" is on by default (the same HKCU Run value the tray
+    menu toggles, so uninstalling removes it). Turn it off with
+    `msiexec /i KnockBlock.msi AUTOSTART=0`.
+  - Upgrades replace the installed version; downgrades are refused.
+
+  Never change UpgradeCode: Windows uses it to find older versions to upgrade.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="KnockBlock"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="KnockBlock"
+           UpgradeCode="4a80fc1b-7f12-462a-a649-e7affdf26326">
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perUser"
+             Description="KnockBlock tray app"
+             Comments="Do-not-disturb light for your door: tells the device when the microphone or webcam is in use." />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of KnockBlock is already installed." />
+    <Media Id="1" Cabinet="knockblock.cab" EmbedCab="yes" />
+
+    <!-- 1 = start with Windows (default), 0 = do not. -->
+    <Property Id="AUTOSTART" Value="1" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Cecchellone/KnockBlock" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="UserProgramsDir" Name="Programs">
+          <Directory Id="INSTALLDIR" Name="KnockBlock">
+            <!-- Per-user components use an HKCU value as key path. -->
+            <Component Id="App" Guid="2e5f9a83-79a8-462d-b1bb-9c968786d939">
+              <File Id="KnockBlockExe" Name="knockblock.exe" Source="$(var.Exe)" />
+              <File Id="License" Name="LICENSE.txt" Source="$(var.License)" />
+              <RegistryValue Root="HKCU" Key="Software\KnockBlock" Name="InstallDir"
+                             Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
+              <!-- Only our folder: %LOCALAPPDATA%\Programs is shared. -->
+              <RemoveFolder Id="RemoveInstallDir" On="uninstall" />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder">
+        <Component Id="StartMenuShortcut" Guid="fc1f531b-7543-425a-b9c3-094cf5c66530">
+          <Shortcut Id="StartMenuKnockBlock" Name="KnockBlock"
+                    Target="[INSTALLDIR]knockblock.exe" WorkingDirectory="INSTALLDIR" />
+          <RegistryValue Root="HKCU" Key="Software\KnockBlock" Name="StartMenuShortcut"
+                         Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="Autostart" Guid="0a989b33-159f-4c8f-90c3-6c2a1e30562c">
+        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="KnockBlock"
+                       Type="string" Value="&quot;[INSTALLDIR]knockblock.exe&quot;" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="KnockBlock" Level="1">
+      <ComponentRef Id="App" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+    <!-- Installed unless AUTOSTART=0. wixl has no feature conditions, so
+         scripts/build-msi.sh adds that row to the MSI's Condition table
+         (installer/condition.idt). -->
+    <Feature Id="StartWithWindows" Title="Start with Windows" Level="1">
+      <ComponentRef Id="Autostart" />
+    </Feature>
+  </Product>
+</Wix>

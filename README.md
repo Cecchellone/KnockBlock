@@ -51,6 +51,15 @@ scripts/check-go.sh   # gofmt, go vet, staticcheck, tests, Windows cross-build (
 
 The required Go toolchain is pinned in `client/go.mod` and downloaded automatically by the `go` command.
 
+### Downloads
+
+Each [release](https://github.com/Cecchellone/KnockBlock/releases) has:
+
+- `KnockBlock-<version>.msi`: the Windows tray app. Installs per user, with no administrator rights; `AUTOSTART=0` skips starting with Windows.
+- `knockblock-<version>.esphomebundle.tar.gz`: the firmware configuration. Extract it, fill in `secrets.yaml`, then run `esphome run knockblock.yaml`.
+
+Details are in [`docs/release-notes.md`](docs/release-notes.md). Build them locally with `scripts/build-msi.sh` (needs `wixl` and `msitools`) and `scripts/build-firmware-bundle.sh` (needs ESPHome).
+
 ### Installing the firmware from the ESPHome dashboard / Home Assistant
 
 No checkout needed: KnockBlock is available as a remote ESPHome package. Create a device in the ESPHome dashboard (or the Home Assistant ESPHome add-on) and use [`firmware/examples/remote-package.yaml`](firmware/examples/remote-package.yaml) as its configuration. It pulls `firmware/knockblock-package.yaml` and the `knockblock_i18n` external component from this repository at `knockblock_ref` (default `main`). Your config only adds Wi-Fi and the API encryption key.

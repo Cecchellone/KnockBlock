@@ -1,0 +1,146 @@
+name: Release
+
+# Builds the deliverables on every PR (as workflow artifacts, to try them)
+# and publishes them as a GitHub release when a tag v<major>.<minor>.<patch>
+# is pushed:
+#   - knockblock-<version>.esphomebundle.tar.gz  firmware config bundle
+#   - KnockBlock-<version>.msi                   Windows installer
+on:
+  push:
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        # The tag without "v"; otherwise 0.0.<run number> (MSI versions
+        # must be numeric).
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+  firmware-bundle:
+    name: Firmware bundle
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ESPHome (version from proto/VERSION)
+        run: pip install "esphome==$(cat proto/VERSION)"
+
+      - name: Build bundle
+        run: scripts/build-firmware-bundle.sh "${{ needs.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bundle
+          path: dist/knockblock-*.esphomebundle.tar.gz
+          if-no-files-found: error
+
+  windows-installer:
+    name: Windows installer (MSI)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.sum
+
+      - name: Install wixl and msitools
+        run: sudo apt-get update -q && sudo apt-get install -y -q wixl msitools
+
+      - name: Build MSI
+        run: scripts/build-msi.sh "${{ needs.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/KnockBlock-*.msi
+          if-no-files-found: error
+
+  installer-smoke-test:
+    name: Install and uninstall the MSI on Windows
+    needs: windows-installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+
+      - name: Install, check, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = (Get-ChildItem KnockBlock-*.msi).FullName
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\KnockBlock\knockblock.exe'
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\KnockBlock.lnk'
+
+          function Msi($arguments) {
+            $p = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($p.ExitCode -ne 0) { Get-Content msi.log -ErrorAction SilentlyContinue | Select-Object -Last 40; throw "msiexec $arguments failed: $($p.ExitCode)" }
+          }
+          function Autostart { (Get-ItemProperty $run -Name KnockBlock -ErrorAction SilentlyContinue).KnockBlock }
+
+          # Default install: per user, no elevation, autostart on.
+          Msi "/i `"$msi`" /qn /l*v msi.log"
+          if (-not (Test-Path $exe)) { throw "knockblock.exe not installed at $exe" }
+          if (-not (Test-Path $lnk)) { throw "Start menu shortcut missing at $lnk" }
+          if ((Autostart) -ne "`"$exe`"") { throw "unexpected Run value: '$(Autostart)'" }
+          Write-Host "Installed: $exe, shortcut, autostart"
+
+          Msi "/x `"$msi`" /qn /l*v msi.log"
+          if (Test-Path $exe) { throw "knockblock.exe left after uninstall" }
+          if (Autostart) { throw "Run value left after uninstall" }
+          Write-Host "Uninstalled cleanly"
+
+          # AUTOSTART=0 skips the Run value.
+          Msi "/i `"$msi`" AUTOSTART=0 /qn /l*v msi.log"
+          if (-not (Test-Path $exe)) { throw "knockblock.exe not installed" }
+          if (Autostart) { throw "Run value written despite AUTOSTART=0" }
+          Msi "/x `"$msi`" /qn /l*v msi.log"
+          Write-Host "AUTOSTART=0 respected"
+
+  publish:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, firmware-bundle, windows-installer, installer-smoke-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "KnockBlock ${{ needs.version.outputs.version }}" \
+            --notes-file docs/release-notes.md \
+            --generate-notes

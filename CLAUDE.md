@@ -82,7 +82,8 @@ These three requirements drive every design decision. If a change conflicts with
   internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/
-  knockblock.iss                  # Inno Setup script (English + Italian)
+  knockblock.wxs                  # MSI definition (WiX 3 subset, built on Linux with wixl)
+  condition.idt                   # Condition table row wixl cannot express (AUTOSTART=0)
 /docs/
   protocol-notes.md             # what we learned about the Native API, with aioesphomeapi references
   adding-a-language.md          # step-by-step guide
@@ -157,7 +158,8 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
 - Embed icon and version info in the executable.
-- Installer with Inno Setup (`installer/knockblock.iss`), offering English and Italian during setup, with optional "Start with Windows".
+- Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
+- Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both to a GitHub release on tags `vX.Y.Z`.
 
 ## 6. Internationalization
 
@@ -179,7 +181,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 6.3 Installer and docs
 
-- Inno Setup: include `English` and `Italian` language entries.
+- MSI: no custom UI strings except the downgrade error message (English). Add localized dialogs only if a custom UI is ever needed.
 - `README.md` is in English; a translated `README.it.md` is welcome but optional.
 
 ## 7. Milestones
@@ -193,7 +195,7 @@ Work in small PRs, one milestone (or part of one) at a time. Each milestone has 
 5. **Detection + status logic** — registry reader, ignore list, state machine, fake for tests. Accept: unit tests for the state machine; manual test notes on Windows.
 6. **Tray app** — systray, menu, reconnect/backoff, sleep/resume handling, heartbeat, i18n wired in. Accept: idle memory ≤ 15 MB reported in the PR.
 7. **Settings page + config** — on-demand localhost UI, DPAPI secret storage, autostart toggle, localized.
-8. **Installer + release** — Inno Setup script, GitHub Actions release artifact.
+8. **Installer + release** — MSI, firmware bundle, GitHub Actions release (pipeline in place; the installer ships the tray app once M6 exists).
 
 ## 8. Environment notes for cloud sessions
 
