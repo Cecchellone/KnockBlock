@@ -1,0 +1,8 @@
+# Italian display labels. Keys are status IDs; values are shown on the device
+# display. A missing key falls back to English.
+free: Libero
+mic: Microfono acceso
+camera: Webcam accesa
+call: In chiamata
+dnd: Non disturbare
+offline: Non connesso

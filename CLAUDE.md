@@ -54,9 +54,12 @@ These three requirements drive every design decision. If a change conflicts with
 /LICENSE
 /.gitignore                     # must ignore secrets.yaml, build output, *.exe
 /firmware/
-  knockblock.yaml                 # main ESPHome config for the real board
+  knockblock.yaml                 # main ESPHome config for the real board (local build)
+  knockblock-package.yaml         # same firmware as a remote package (fetched from GitHub)
+  examples/                       # device configs that use the remote package
   host-test.yaml                # same logic on ESPHome's `host` platform, for tests without hardware
-  common/                       # shared packages (status logic, watchdog, entities)
+  common/                       # shared packages: core.yaml (status logic, watchdog, entities), board.yaml (hardware)
+  components/                   # local external components (knockblock_i18n: display labels)
   locales/                      # display strings, one file per language (see §6.2)
   secrets.example.yaml          # template; real secrets.yaml is git-ignored
 /proto/
@@ -67,6 +70,7 @@ These three requirements drive every design decision. If a change conflicts with
 /client/                        # Go module
   go.mod
   cmd/knockblock/                 # main package: tray app entry point
+  cmd/knockctl/                   # dev CLI on the same client (tests, trying the device); not shipped
   internal/espapi/              # minimal Native API client (transport, noise, framing, messages)
   internal/espapi/pb/           # generated protobuf code (do not edit)
   internal/detect/              # mic/webcam detection (Windows impl + fake for tests)
@@ -75,6 +79,7 @@ These three requirements drive every design decision. If a change conflicts with
   internal/i18n/                # locale loading, language detection, fallback
   internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
   internal/tray/                # tray icon, menu, icons per status
+  internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/
   knockblock.iss                  # Inno Setup script (English + Italian)
@@ -104,7 +109,7 @@ These three requirements drive every design decision. If a change conflicts with
 
 Implement, in this order:
 
-1. Framing: plaintext (`0x00`, varint length, varint type, payload) and Noise (`0x01`, 2-byte big-endian length, encrypted payload).
+1. Framing: plaintext (`0x00`, varint length, varint type, payload) and Noise (`0x01`, 2-byte big-endian length, encrypted payload; the decrypted payload starts with a 2-byte type and a 2-byte length).
 2. Noise handshake exactly as `aioesphomeapi` does it (including prologue and the server-hello frame).
 3. Hello / connection negotiation as done by the current `aioesphomeapi` for the pinned ESPHome version.
 4. `ListEntities` → map entity `object_id`/name to numeric `key` (commands use keys).

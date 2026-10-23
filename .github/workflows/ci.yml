@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: client/go.mod
-          cache-dependency-path: client/go.mod
+          cache-dependency-path: client/go.sum
 
       - name: Run Go checks
         run: scripts/check-go.sh
@@ -29,5 +29,104 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: knockblock-windows-amd64
-          path: dist/knockblock.exe
+          path: |
+            dist/knockblock.exe
+            dist/knockctl.exe
           if-no-files-found: error
+
+  firmware:
+    name: Firmware (validate, compile)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ESPHome (version from proto/VERSION)
+        run: pip install "esphome==$(cat ../proto/VERSION)"
+
+      - name: Create throwaway secrets
+        run: |
+          sed "s|^api_encryption_key: .*|api_encryption_key: \"$(openssl rand -base64 32)\"|" \
+            secrets.example.yaml > secrets.yaml
+
+      - name: Validate configurations
+        run: |
+          esphome config host-test.yaml > /dev/null
+          esphome config knockblock.yaml > /dev/null
+
+      - name: Validate the remote package from GitHub at this branch
+        # Fetches firmware/knockblock-package.yaml and the external component
+        # exactly as a user's device config would. Forks are skipped: their
+        # branches do not exist in this repository.
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # ESPHome clones with git; authenticate it while the repository is
+          # private (harmless once it is public).
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          cp secrets.yaml examples/
+          esphome -s knockblock_ref "${{ github.head_ref || github.ref_name }}" \
+            config examples/remote-package.yaml > remote-config.log 2>&1 || { cat remote-config.log; exit 1; }
+          tail -n 1 remote-config.log
+
+      - name: Compile host test firmware
+        run: esphome compile host-test.yaml
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/esphome
+          key: esphome-toolchains-${{ hashFiles('proto/VERSION') }}
+
+      - name: Compile ESP32-C6 firmware
+        run: esphome compile knockblock.yaml
+
+  proto:
+    name: Generated protobuf code is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.sum
+
+      - name: Regenerate
+        run: proto/generate.sh
+
+      - name: Check for differences
+        run: git diff --exit-code -- client/internal/espapi/pb
+
+  integration:
+    name: Integration (Go client vs ESPHome host firmware)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.sum
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ESPHome (version from proto/VERSION)
+        run: pip install "esphome==$(cat proto/VERSION)"
+
+      - name: Plaintext
+        run: scripts/itest-host.sh host-test.yaml
+
+      - name: Noise encryption
+        env:
+          # The fixed test key of firmware/host-test-noise.yaml.
+          KNOCKBLOCK_ITEST_KEY: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+        run: scripts/itest-host.sh host-test-noise.yaml
