@@ -92,7 +92,10 @@ knockctl.exe -addr knockblock.local -key <api key> flip on    # turn the light's
 
 Options: `-pc NAME` (default: the computer name), `-ignore app.exe,…`, `-no-app-names`, `-debug-mem 30s`.
 
-### Doorbell button and display orientation
+### Display, doorbell and orientation
+
+- The display shows the status in large letters and, in a darker bar at the top, the PC (left), the app (middle) and the time (right), or how many minutes the call has lasted. **Privacy mode** hides the PC and the app. The time comes from the internet (SNTP): if you are not in the `Europe/Rome` time zone, set `timezone` in your device config's `substitutions:` (e.g. `timezone: Europe/London`).
+- **LED brightness** (Home Assistant, or the PC settings' Light tab) sets how bright the status LED is.
 
 - The doorbell is the board's **BOOT** button. To use an external push button instead, wire it between a free GPIO and GND and set `doorbell_pin` in your device config's `substitutions:` (e.g. `doorbell_pin: GPIO4`). Home Assistant sees a `Doorbell` event (device class `doorbell`) and a `Ring doorbell` button.
 - If the light hangs the other way round, turn on the **Flip display** switch (Home Assistant), or choose "Upside down" in the PC app's settings. The device remembers it.
