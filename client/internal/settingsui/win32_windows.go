@@ -202,6 +202,19 @@ type nonClientMetrics struct {
 const (
 	wsClipSiblings = 0x04000000
 	wmNotify       = 0x004E
+	wmHScroll      = 0x0114
+
+	// Trackbar (slider) control, commctrl.h.
+	tbsAutoTicks   = 0x0001
+	tbsHorz        = 0x0000
+	tbsBottom      = 0x0000
+	tbmGetPos      = 0x0400 // WM_USER
+	tbmSetPos      = 0x0405
+	tbmSetRange    = 0x0406
+	tbmSetTicFreq  = 0x0414
+	tbmSetPageSize = 0x0415
+	tbmSetLineSize = 0x0417
+	tbEndTrack     = 8
 	wmKeyDown      = 0x0100
 	tcmGetCurSel   = 0x130B
 	tcmSetCurSel   = 0x130C

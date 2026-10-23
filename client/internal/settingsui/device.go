@@ -63,8 +63,33 @@ type Device struct {
 	conn  DeviceConn
 	ents  espapi.Entities
 	Name  string
-	saved DeviceSettings // as last read or written
+	saved DeviceSettings // as last read or saved
+
+	send sync.Mutex // one command sequence at a time
+
+	mu      sync.Mutex
+	live    DeviceSettings // what the light shows now, previews included
+	pending [sliderCount]struct {
+		value int
+		set   bool
+	}
+	wake     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
 }
+
+// Slider is a setting the window changes live, while it is dragged.
+type Slider int
+
+// Sliders.
+const (
+	SliderBacklight Slider = iota // display brightness, 0–100 %, 0 = off
+	SliderLED                     // default LED brightness, 5–100 %
+	sliderCount
+)
+
+// sendTimeout bounds each command sent to the light.
+const sendTimeout = 5 * time.Second
 
 // stateWait bounds how long OpenDevice waits for the light to send the
 // current values after subscribing.
@@ -97,7 +122,8 @@ func readDevice(ctx context.Context, conn DeviceConn) (*Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Device{conn: conn, ents: ents, Name: conn.DeviceName()}
+	d := &Device{conn: conn, ents: ents, Name: conn.DeviceName(),
+		wake: make(chan struct{}, 1), done: make(chan struct{})}
 	want := map[uint32]bool{}
 	for _, id := range []struct {
 		kind espapi.EntityKind
@@ -165,17 +191,141 @@ func readDevice(ctx context.Context, conn DeviceConn) (*Device, error) {
 			s.LED, s.HasLED = int(math.Round(st.Number)), true
 		}
 	}
+	d.live = d.saved
+	go d.previews()
 	return d, nil
 }
 
-// Settings returns the light's settings as last read or written.
-func (d *Device) Settings() DeviceSettings { return d.saved }
+// Settings returns the light's settings as last read or saved.
+func (d *Device) Settings() DeviceSettings {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.saved
+}
 
-// Apply sends the settings that differ from the light's current ones.
-func (d *Device) Apply(ctx context.Context, s DeviceSettings) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+// Preview shows a slider's value on the light at once, without saving it:
+// Apply keeps it, Revert undoes it. It does not wait; while a command is on
+// its way, newer values replace older ones, so dragging never queues up.
+func (d *Device) Preview(sl Slider, value int) {
+	d.mu.Lock()
+	d.pending[sl].value, d.pending[sl].set = value, true
+	d.mu.Unlock()
+	select {
+	case d.wake <- struct{}{}:
+	default: // already woken
+	}
+}
+
+// previews sends the pending slider values until Close.
+func (d *Device) previews() {
+	for {
+		select {
+		case <-d.done:
+			return
+		case <-d.wake:
+		}
+		for {
+			d.mu.Lock()
+			sl, value, ok := d.takePending()
+			d.mu.Unlock()
+			if !ok {
+				break
+			}
+			d.send.Lock()
+			ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+			err := d.setSlider(ctx, sl, value)
+			cancel()
+			if err == nil {
+				d.mu.Lock()
+				d.setLive(sl, value)
+				d.mu.Unlock()
+			}
+			d.send.Unlock()
+		}
+	}
+}
+
+// takePending returns and clears one pending slider value; d.mu is held.
+func (d *Device) takePending() (Slider, int, bool) {
+	for sl := range d.pending {
+		if p := &d.pending[sl]; p.set {
+			p.set = false
+			return Slider(sl), p.value, true
+		}
+	}
+	return 0, 0, false
+}
+
+// dropPending forgets the slider values not sent yet; d.mu is held.
+func (d *Device) dropPending() {
+	for sl := range d.pending {
+		d.pending[sl].set = false
+	}
+}
+
+func (d *Device) setLive(sl Slider, value int) {
+	if sl == SliderBacklight {
+		d.live.Backlight = value
+	} else {
+		d.live.LED = value
+	}
+}
+
+func (d *Device) setSlider(ctx context.Context, sl Slider, value int) error {
+	if sl == SliderBacklight {
+		if e, ok := d.ents.Find(espapi.KindLight, entBacklight); ok {
+			return d.conn.SetLight(ctx, e.Key, value > 0, float64(value)/100)
+		}
+		return nil
+	}
+	if e, ok := d.ents.Find(espapi.KindNumber, entLED); ok {
+		return d.conn.SetNumber(ctx, e.Key, float64(value))
+	}
+	return nil
+}
+
+// Revert puts back the saved values of the sliders previewed since the last
+// Apply: the window was closed without saving.
+func (d *Device) Revert(ctx context.Context) error {
+	d.mu.Lock()
+	d.dropPending()
+	d.mu.Unlock()
+	d.send.Lock()
+	defer d.send.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
-	cur := d.saved
+	d.mu.Lock()
+	live, saved := d.live, d.saved
+	d.mu.Unlock()
+	var errs []error
+	if saved.HasBacklight && live.Backlight != saved.Backlight {
+		errs = append(errs, d.setSlider(ctx, SliderBacklight, saved.Backlight))
+	}
+	if saved.HasLED && live.LED != saved.LED {
+		errs = append(errs, d.setSlider(ctx, SliderLED, saved.LED))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("settingsui: restoring the light's brightness: %w", err)
+	}
+	d.mu.Lock()
+	d.live = d.saved
+	d.mu.Unlock()
+	return nil
+}
+
+// Apply sends the settings that differ from what the light shows now
+// (previews included) and keeps them as the saved ones.
+func (d *Device) Apply(ctx context.Context, s DeviceSettings) error {
+	d.mu.Lock()
+	d.dropPending() // s has the final values
+	d.mu.Unlock()
+	d.send.Lock()
+	defer d.send.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	d.mu.Lock()
+	cur := d.live
+	d.mu.Unlock()
 	var errs []error
 	send := func(kind espapi.EntityKind, id string, fn func(key uint32) error) {
 		if e, ok := d.ents.Find(kind, id); ok {
@@ -202,12 +352,17 @@ func (d *Device) Apply(ctx context.Context, s DeviceSettings) error {
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("settingsui: light settings: %w", err)
 	}
-	d.saved = s
+	d.mu.Lock()
+	d.saved, d.live = s, s
+	d.mu.Unlock()
 	return nil
 }
 
 // Close disconnects from the light.
-func (d *Device) Close() error { return d.conn.Close() }
+func (d *Device) Close() error {
+	d.stopOnce.Do(func() { close(d.done) })
+	return d.conn.Close()
+}
 
 // DisplayLanguages names the light's display languages, in their own
 // language when the app knows it ("Italiano"), else by code.
@@ -223,27 +378,28 @@ func (m *Model) DisplayLanguages(codes []string) []Choice {
 	return out
 }
 
-// Percentages lists brightness choices from 10 % to 100 %; withOff adds
-// "Off" (0) first.
-func (m *Model) Percentages(withOff bool) []Choice {
-	var out []Choice
-	if withOff {
-		out = append(out, Choice{"0", m.T("settings.off")})
+// SliderRange returns a slider's limits and step, in percent.
+func SliderRange(sl Slider) (lo, hi, step int) {
+	if sl == SliderBacklight {
+		return 0, 100, 5
 	}
-	for p := 10; p <= 100; p += 10 {
-		out = append(out, Choice{strconv.Itoa(p), strconv.Itoa(p) + " %"})
-	}
-	return out
+	return 5, 100, 5 // the firmware's led_brightness minimum
 }
 
-// NearestPercent rounds p to the nearest choice value, so a brightness set
-// elsewhere (e.g. 35 % from Home Assistant) still selects an entry.
-func NearestPercent(p int, withOff bool) int {
-	if withOff && p <= 0 {
-		return 0
+// snap rounds a value to the slider's steps and limits.
+func snap(sl Slider, v int) int {
+	lo, hi, step := SliderRange(sl)
+	v = (v + step/2) / step * step
+	return min(hi, max(lo, v))
+}
+
+// SliderLabel is the text next to a slider: "35 %", or "Off" for a display
+// brightness of 0.
+func (m *Model) SliderLabel(sl Slider, value int) string {
+	if sl == SliderBacklight && value <= 0 {
+		return m.T("settings.off")
 	}
-	n := int(math.Round(float64(p)/10)) * 10
-	return min(100, max(10, n))
+	return strconv.Itoa(value) + " %"
 }
 
 // DeviceError returns the message shown when the light's settings cannot

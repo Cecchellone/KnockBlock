@@ -140,8 +140,8 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 5.2 Detection
 
-- Source: `HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{microphone,webcam}`, including the `NonPackaged` subkey (desktop apps; executable path encoded with `#` instead of `\`).
-- An app is "in use" when `LastUsedTimeStop == 0` and `LastUsedTimeStart != 0`. Verify this on a real machine and document findings in `docs/`.
+- Microphone: the active capture sessions of the Windows audio sessions (WASAPI, Core Audio COM by vtable, no CGO). Fallback when they cannot be read: the consent store.
+- Camera (and the microphone fallback): `HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{microphone,webcam}`, including the `NonPackaged` subkey (desktop apps; executable path encoded with `#` instead of `\`). An app is "in use" when `LastUsedTimeStop == 0` and `LastUsedTimeStart != 0` and its program, by full path, still runs (stale entries of crashed apps and old versions). Findings in `docs/detection-notes.md`.
 - Poll every 1–2 s (simple and cheap). Event-based `RegNotifyChangeKeyValue` is an optional later optimization.
 - User-configurable **ignore list** by executable name (e.g. apps that keep the mic open outside calls).
 - Report **which app** uses the camera/microphone, using friendly names from a built-in table that the settings can extend (`docs/presence.md`). Browsers show as the browser.
@@ -158,8 +158,9 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 - Tray icon colour reflects status; tooltip shows localized status and connection state.
 - Menu: current status, override options, "Open settings", "Start with Windows" toggle, "Quit".
-- Notifications: only for things that matter (device unreachable for several minutes, doorbell, update), always the standard Windows notification with no custom sound; they can be disabled.
-- Settings window (native, in tabs): Connection (host, default `knockblock.local`, port, encryption key, connection test), Light (the device's own settings, read live and written to the device: display language, orientation, display and LED brightness, privacy), This PC (name, language, app names, doorbell, notifications, autostart), Apps (ignore list, app names). It opens by itself on first start. Saving reconnects only when the address or key changes.
+- Notifications: only for things that matter (device unreachable for several minutes, doorbell, update), always the standard Windows notification and Windows' own sound, never a custom one. A setting picks the mode: none, text only (default), sound only, text and sound.
+- Double-clicking the tray icon opens the settings; a single click opens the menu.
+- Settings window (native, in tabs): Connection (host, default `knockblock.local`, port, encryption key, connection test), Light (the device's own settings, read live and written to the device: display language, orientation, display and LED brightness as sliders shown on the light while dragged and put back if the window closes without saving, privacy), This PC (name, language, app names, doorbell, notification mode, autostart), Apps (ignore list, app names). It opens by itself on first start. Saving reconnects only when the address or key changes.
 
 ### 5.5 Config and secrets
 
