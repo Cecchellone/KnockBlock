@@ -11,7 +11,7 @@ static const char *const TAG = "knockblock_presence";
 
 // Status IDs from weakest to strongest; index 0 (offline) means "no live
 // source". Keep in sync with the `status` select options in common/core.yaml.
-static const char *const STATUSES[] = {"offline", "free", "dnd", "mic", "camera", "call"};
+static const char *const STATUSES[] = {"offline", "free", "muted", "dnd", "mic", "camera", "call"};
 static constexpr uint8_t OFFLINE = 0;
 static constexpr uint8_t NUM_STATUSES = sizeof(STATUSES) / sizeof(STATUSES[0]);
 

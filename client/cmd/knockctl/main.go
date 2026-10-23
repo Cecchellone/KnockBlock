@@ -5,13 +5,15 @@
 //
 //	knockctl [flags] list               list entities
 //	knockctl [flags] watch              print state changes until Ctrl-C
-//	knockctl [flags] status <id>        set the status (free, mic, camera, call, dnd, offline)
+//	knockctl [flags] status <id>        set the status (free, muted, mic, camera, call, dnd, offline)
 //	knockctl [flags] lang <code>        set the display language (en, it, ...)
 //	knockctl [flags] heartbeat          press the heartbeat button
 //	knockctl [flags] report <pc> <status> [app]
 //	                                    report a PC's status, as the tray app does
-//	knockctl detect                     list the Windows consent store entries and the
-//	                                    audio sessions: which apps use the mic/camera now
+//	knockctl detect                     list the Windows consent store entries, the audio
+//	                                    sessions and the camera streams: which apps use
+//	                                    the mic/camera now
+//	knockctl [flags] detect live        print what detection sees every -interval until Ctrl-C
 //	knockctl [flags] agent              run the tray app's presence loop without a tray:
 //	                                    detect, compute and report until Ctrl-C
 //
@@ -86,6 +88,9 @@ func run() error {
 	}
 	switch args[0] {
 	case "detect":
+		if len(args) > 1 && args[1] == "live" {
+			return detectLiveCmd(ctx, *interval)
+		}
 		return detectCmd()
 	case "agent":
 		return agentCmd(ctx, log, dialOpts, agentFlags{

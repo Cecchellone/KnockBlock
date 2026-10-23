@@ -241,14 +241,11 @@ type fakeAudio struct {
 	err      error
 }
 
-type fakeSession struct {
-	pid    uint32
-	active bool
-}
+type fakeSession = audioSession
 
-func (a *fakeAudio) capture(fn func(uint32, bool)) error {
+func (a *fakeAudio) capture(fn func(audioSession)) error {
 	for _, s := range a.sessions {
-		fn(s.pid, s.active)
+		fn(s)
 	}
 	return a.err
 }
@@ -278,13 +275,13 @@ func TestAudioSessions(t *testing.T) {
 		},
 	}
 	audio := &fakeAudio{sessions: []fakeSession{
-		{10, true}, {11, true}, // two sessions of one app count once
-		{20, true},
-		{30, true},  // built-in ignore: records for other apps
-		{40, true},  // ignored by the user
-		{50, false}, // Discord open, not in a call
-		{99, true},  // this process
-		{77, true},  // exited meanwhile
+		{10, true, false}, {11, true, true}, // two sessions of one app count once; one unmuted is enough
+		{20, true, true},   // muted
+		{30, true, false},  // built-in ignore: records for other apps
+		{40, true, false},  // ignored by the user
+		{50, false, false}, // Discord open, not in a call
+		{99, true, false},  // this process
+		{77, true, false},  // exited meanwhile
 	}}
 	d := newConsentStore(w, procs, Options{Ignore: []string{"OBS64.exe"}}).withAudio(audio, 99)
 	var s Snapshot
@@ -301,10 +298,13 @@ func TestAudioSessions(t *testing.T) {
 		if a.Name == "Zoom" && a.Key != `C:#Program Files#Zoom#bin#Zoom.exe` {
 			t.Errorf("Zoom key %q, want the consent store form", a.Key)
 		}
+		if want := a.Name != "Zoom"; a.Muted != want {
+			t.Errorf("%s muted = %v, want %v", a.Name, a.Muted, want)
+		}
 	}
 
 	// Nobody records, though Discord is open.
-	audio.sessions = []fakeSession{{50, false}}
+	audio.sessions = []fakeSession{{50, false, false}}
 	if err := d.Poll(&s); err != nil || len(s.Mic) != 0 {
 		t.Errorf("idle: mic %v, err %v", names(s.Mic), err)
 	}
@@ -316,6 +316,82 @@ func TestAudioSessions(t *testing.T) {
 	}
 	if got, want := names(s.Mic), []string{"Discord", "Teams"}; !slices.Equal(got, want) {
 		t.Errorf("fallback mic = %v, want %v", got, want)
+	}
+}
+
+// fakeCamera serves fixed camera streams.
+type fakeCamera struct {
+	pids []uint32
+	err  error
+}
+
+func (c *fakeCamera) streams(fn func(uint32)) error {
+	for _, pid := range c.pids {
+		fn(pid)
+	}
+	return c.err
+}
+
+func (c *fakeCamera) close() error { return nil }
+
+func TestCameraStreams(t *testing.T) {
+	// The consent store says Zoom uses the camera: stale, the camera
+	// streams are what counts.
+	w := &fakeWalker{entries: map[Device][]fakeEntry{
+		Camera: {{key: `C:#Program Files#Zoom#bin#Zoom.exe`, start: 7}},
+	}}
+	procs := &fakeProcs{
+		titles_: map[string][]string{
+			"zoom.exe": nil, "discord.exe": nil, "obs64.exe": nil,
+			"chrome.exe":           {"Meet - abc-defg-hij - Google Chrome"},
+			"nvidia broadcast.exe": nil,
+		},
+		pids: map[uint32]string{
+			10: "zoom.exe", 20: "chrome.exe", 30: "nvidia broadcast.exe",
+			40: "obs64.exe", 50: "discord.exe", 99: "knockblock.exe",
+		},
+	}
+	audio := &fakeAudio{}
+	cam := &fakeCamera{pids: []uint32{20, 20, 40, 99, 77}}
+	d := newConsentStore(w, procs, Options{Ignore: []string{"obs64.exe"}}).withAudio(audio, 99).withCamera(cam, 99)
+	var s Snapshot
+	if err := d.Poll(&s); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(s.Camera), []string{"Meet (Chrome)"}; !slices.Equal(got, want) {
+		t.Errorf("camera = %v, want %v", got, want)
+	}
+
+	// NVIDIA Broadcast streams the camera for whoever reads its virtual
+	// camera: the app in a call, Discord here.
+	cam.pids = []uint32{30}
+	audio.sessions = []fakeSession{{50, true, true}}
+	if err := d.Poll(&s); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(s.Camera), []string{"Discord"}; !slices.Equal(got, want) {
+		t.Errorf("relayed camera = %v, want %v", got, want)
+	}
+	if !s.Mic[0].Muted || s.Camera[0].Muted {
+		t.Errorf("muted flags: mic %v, camera %v", s.Mic[0].Muted, s.Camera[0].Muted)
+	}
+
+	// Nobody records: the relay itself is shown.
+	audio.sessions = nil
+	if err := d.Poll(&s); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(s.Camera), []string{"NVIDIA Broadcast"}; !slices.Equal(got, want) {
+		t.Errorf("relay alone = %v, want %v", got, want)
+	}
+
+	// Camera streams unavailable: the consent store decides.
+	cam.err = errors.New("no camera service")
+	if err := d.Poll(&s); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(s.Camera), []string{"Zoom"}; !slices.Equal(got, want) {
+		t.Errorf("fallback camera = %v, want %v", got, want)
 	}
 }
 
