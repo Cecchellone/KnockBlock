@@ -140,8 +140,8 @@ light:
       ignore_strapping_warning: true
     num_leds: 1
     chipset: WS2812
-    # TODO(verify): colour order on the real board (red must look red).
-    channel_colors: GRB
+    # Verified on the real board: with GRB, red and green were swapped.
+    channel_colors: RGB
     restore_mode: ALWAYS_OFF
 
 script:
