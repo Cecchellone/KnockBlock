@@ -71,6 +71,7 @@ These three requirements drive every design decision. If a change conflicts with
   go.mod
   cmd/knockblock/                 # main package: tray app entry point
   cmd/knockctl/                   # dev CLI on the same client (tests, trying the device); not shipped
+  cmd/genicon/                    # writes the app .ico at build time (scripts/winres.sh); not shipped
   internal/espapi/              # minimal Native API client (transport, noise, framing, messages)
   internal/espapi/pb/           # generated protobuf code (do not edit)
   internal/detect/              # mic/webcam detection (Windows impl + fake for tests)
@@ -80,6 +81,7 @@ These three requirements drive every design decision. If a change conflicts with
   internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
   internal/tray/                # tray icon, menu, icons per status
   internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
+  internal/icon/                # draws the app/tray icon (door + status light) and encodes .ico; no image files in the repo
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/
   knockblock.wxs                  # MSI definition (WiX 3 subset, built on Linux with wixl)
@@ -157,7 +159,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 ### 5.6 Build and distribution
 
 - `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -H=windowsgui"`.
-- Embed icon and version info in the executable.
+- Embed icon and version info in the executable: `scripts/winres.sh` draws the icon with `internal/icon` and writes `cmd/knockblock/rsrc_windows_amd64.syso` with go-winres (pinned, run via `go run`).
 - Installer: an **MSI** (owner's choice over Inno Setup), built on Linux by `scripts/build-msi.sh` with wixl/msitools from `installer/knockblock.wxs`. It installs per user (no admin) into `%LOCALAPPDATA%\Programs\KnockBlock`, with a Start menu shortcut and "Start with Windows" on by default (`AUTOSTART=0` turns it off). It has no custom dialogs: Windows shows its own texts in the system language.
 - Release workflow (`.github/workflows/release.yml`): builds the MSI and the firmware bundle on every PR, installs and uninstalls the MSI on a Windows runner, and publishes both to a GitHub release on tags `vX.Y.Z`.
 

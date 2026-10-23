@@ -39,6 +39,7 @@ go test -race ./...
 
 echo "==> windows build"
 mkdir -p ../dist
+../scripts/winres.sh 0.0.0
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
 	-ldflags "-s -w -H=windowsgui -X main.version=${VERSION:-dev}" \
 	-o ../dist/knockblock.exe ./cmd/knockblock
