@@ -22,7 +22,7 @@ table of up to 8 **sources**:
 - Reporting `offline` drops the source at once, for example on a clean
   shutdown. An unknown status is ignored and logged.
 - **The strongest live status wins:** `call` > `camera` > `mic` > `dnd` >
-  `free`. On a tie, the most recent report wins. With no live source the
+  `muted` > `free`. On a tie, the most recent report wins. With no live source the
   status is `offline`.
 - The `status` select always shows the combined status. `active_app` and
   `active_pc` show the app and PC of the winning source; both are empty for
