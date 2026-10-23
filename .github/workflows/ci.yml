@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (lint, test, Windows build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.mod
+
+      - name: Run Go checks
+        run: scripts/check-go.sh
+        env:
+          VERSION: ${{ github.sha }}
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: knockblock-windows-amd64
+          path: dist/knockblock.exe
+          if-no-files-found: error

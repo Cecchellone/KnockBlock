@@ -32,6 +32,25 @@ KnockBlock is a small status light that hangs outside your room and tells everyo
 - Infrared transmitter to control an old air conditioner.
 - DHT22 temperature and humidity sensor.
 
+## Repository layout
+
+| Path | What it is |
+|------|------------|
+| `firmware/` | ESPHome configuration for the device (and a `host` build for tests) |
+| `client/` | Go module with the Windows tray app |
+| `proto/` | ESPHome Native API protobuf files, pinned to the version in `proto/VERSION` |
+| `docs/` | Protocol notes and contributor guides |
+
+## Development
+
+The Go module builds and tests on Linux; Windows-only code sits behind build tags.
+
+```sh
+scripts/check-go.sh   # gofmt, go vet, staticcheck, tests, Windows cross-build (dist/knockblock.exe)
+```
+
+The required Go toolchain is pinned in `client/go.mod` and downloaded automatically by the `go` command.
+
 ## License
 
-TBD.
+KnockBlock is free software, released under the [GNU General Public License v3.0](LICENSE).

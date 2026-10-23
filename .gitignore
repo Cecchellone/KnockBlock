@@ -1,0 +1,24 @@
+# Secrets (never commit real keys or Wi-Fi credentials)
+secrets.yaml
+
+# ESPHome build output
+.esphome/
+
+# Go / release build output
+/dist/
+*.exe
+*.syso
+*.test
+*.out
+coverage.*
+
+# Python tooling (ESPHome, test helpers)
+.venv/
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
