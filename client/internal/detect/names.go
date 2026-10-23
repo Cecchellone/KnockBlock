@@ -1,5 +1,7 @@
 package detect
 
+import "strings"
+
 // builtinNames maps lower-case executable names and Store package names to
 // the friendly names shown on the device (docs/presence.md). Users can add
 // or override entries through Options.Names.
@@ -35,4 +37,42 @@ var builtinNames = map[string]string{
 	"brave.exe":   "Brave",
 	"opera.exe":   "Opera",
 	"vivaldi.exe": "Vivaldi",
+}
+
+// browsers are the executables whose window titles are searched for a web
+// app (WebAppFromTitle).
+var browsers = map[string]bool{
+	"chrome.exe": true, "msedge.exe": true, "firefox.exe": true,
+	"brave.exe": true, "opera.exe": true, "vivaldi.exe": true,
+}
+
+// webApps maps text found in a browser window title (lower-case) to the web
+// app's name, most specific first. Titles look like
+// "Chat | Microsoft Teams — Mozilla Firefox" or "Meet - abc-defg-hij - Google Chrome".
+var webApps = []struct{ match, name string }{
+	{"microsoft teams", "Teams"},
+	{"google meet", "Meet"},
+	{"meet - ", "Meet"},
+	{"zoom", "Zoom"},
+	{"discord", "Discord"},
+	{"slack", "Slack"},
+	{"whatsapp", "WhatsApp"},
+	{"webex", "Webex"},
+	{"jitsi", "Jitsi"},
+	{"whereby", "Whereby"},
+	{"skype", "Skype"},
+	{"messenger", "Messenger"},
+	{"telegram", "Telegram"},
+}
+
+// WebAppFromTitle returns the web app named in a browser window title, or
+// "" if none.
+func WebAppFromTitle(title string) string {
+	t := strings.ToLower(title)
+	for _, w := range webApps {
+		if strings.Contains(t, w.match) {
+			return w.name
+		}
+	}
+	return ""
 }

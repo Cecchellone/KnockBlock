@@ -85,7 +85,7 @@ func TestPoll(t *testing.T) {
 			{key: `C:#Program Files#Zoom#bin#Zoom.exe`, start: 7},
 		},
 	}}
-	d := newConsentStore(w, Options{
+	d := newConsentStore(w, nil, Options{
 		Ignore: []string{"NVIDIA Broadcast.exe"},
 		Names:  map[string]string{"zoom.exe": "Zoom Meetings"}, // overrides the table
 	})
@@ -140,5 +140,70 @@ func TestFromFile(t *testing.T) {
 	os.WriteFile(path, []byte("speaker x.exe\n"), 0o644)
 	if err := d.Poll(&s); err == nil {
 		t.Fatal("bad line accepted")
+	}
+}
+
+// fakeProcs is a fixed process list with window titles.
+type fakeProcs struct {
+	titles_  map[string][]string // lower-case exe → window titles
+	refreshs int
+}
+
+func (p *fakeProcs) refresh() error          { p.refreshs++; return nil }
+func (p *fakeProcs) running(exe string) bool { _, ok := p.titles_[exe]; return ok }
+func (p *fakeProcs) titles(exe string, fn func(string) bool) {
+	for _, t := range p.titles_[exe] {
+		if !fn(t) {
+			return
+		}
+	}
+}
+
+func TestStaleEntriesAndWebApps(t *testing.T) {
+	w := &fakeWalker{entries: map[Device][]fakeEntry{
+		Microphone: {
+			// Discord crashed long ago: its entry still says "in use".
+			{key: `C:#Users#me#AppData#Local#Discord#app-1#Discord.exe`, start: 5},
+			{key: `C:#Program Files#Mozilla Firefox#firefox.exe`, start: 5},
+			{key: `C:#Program Files#Google#Chrome#Application#chrome.exe`, start: 5},
+			{key: "MSTeams_8wekyb3d8bbwe", packaged: true, start: 5}, // Store apps are not checked
+		},
+	}}
+	procs := &fakeProcs{titles_: map[string][]string{
+		"firefox.exe": {"Mozilla Firefox", "Chat | Microsoft Teams — Mozilla Firefox"},
+		"chrome.exe":  {"Inbox - Gmail - Google Chrome"},
+	}}
+	d := newConsentStore(w, procs, Options{})
+	var s Snapshot
+	if err := d.Poll(&s); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(s.Mic), []string{"Chrome", "Teams", "Teams (Firefox)"}; !slices.Equal(got, want) {
+		t.Errorf("mic = %v, want %v", got, want)
+	}
+	if procs.refreshs != 1 {
+		t.Errorf("%d process snapshots in one poll, want 1", procs.refreshs)
+	}
+	// Nothing in use: no process snapshot at all.
+	d = newConsentStore(&fakeWalker{}, procs, Options{})
+	d.Poll(&s)
+	if procs.refreshs != 1 {
+		t.Error("process snapshot taken with nothing in use")
+	}
+}
+
+func TestWebAppFromTitle(t *testing.T) {
+	tests := map[string]string{
+		"Chat | Microsoft Teams — Mozilla Firefox": "Teams",
+		"Meet - abc-defg-hij - Google Chrome":      "Meet",
+		"Zoom Meeting - Microsoft Edge":            "Zoom",
+		"#general | My Server - Discord - Brave":   "Discord",
+		"Inbox (3) - me@example.com - Gmail":       "",
+		"":                                         "",
+	}
+	for title, want := range tests {
+		if got := WebAppFromTitle(title); got != want {
+			t.Errorf("%q: %q, want %q", title, got, want)
+		}
 	}
 }

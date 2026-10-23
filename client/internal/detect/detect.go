@@ -78,10 +78,27 @@ type walker interface {
 	close() error
 }
 
+// processes looks at the programs running now. The consent store says an
+// app is using the microphone until the app tells Windows it stopped; an
+// app that crashed or was killed never does, so its entry stays "in use"
+// forever. Checking that the program still runs drops those entries.
+type processes interface {
+	// refresh takes a new snapshot of the running programs.
+	refresh() error
+	// running reports whether a program with this executable name
+	// (lower-case, e.g. "discord.exe") runs.
+	running(exe string) bool
+	// titles calls fn with the title of each visible window of the
+	// programs with this executable name, until fn returns false.
+	titles(exe string, fn func(title string) bool)
+}
+
 // consentStore turns consent store entries into a Snapshot. It is portable;
-// only the walker is Windows-specific.
+// only the walker and the process list are Windows-specific.
 type consentStore struct {
 	w      walker
+	procs  processes              // nil: entries are trusted as they are
+	polled bool                   // procs refreshed during this poll
 	ignore map[string]bool        // lower-case exe or package names
 	names  map[string]string      // lower-case exe or package name → friendly name
 	cache  map[string]cachedEntry // by raw key, so steady polls allocate nothing
@@ -94,11 +111,14 @@ type consentStore struct {
 type cachedEntry struct {
 	app     App
 	ignored bool
+	exe     string // lower-case executable name of a desktop app
+	browser bool   // the app is a web browser
 }
 
-func newConsentStore(w walker, opts Options) *consentStore {
+func newConsentStore(w walker, procs processes, opts Options) *consentStore {
 	c := &consentStore{
 		w:      w,
+		procs:  procs,
 		ignore: make(map[string]bool, len(opts.Ignore)),
 		names:  make(map[string]string, len(builtinNames)+len(opts.Names)),
 		cache:  make(map[string]cachedEntry),
@@ -119,6 +139,7 @@ func newConsentStore(w walker, opts Options) *consentStore {
 func (c *consentStore) Poll(dst *Snapshot) error {
 	dst.Reset()
 	c.dst = dst
+	c.polled = false
 	for dev := Microphone; dev <= Camera; dev++ {
 		c.dev = dev
 		if err := c.w.walk(dev, c.visitFn); err != nil {
@@ -144,11 +165,40 @@ func (c *consentStore) visit(key []byte, packaged bool, start, stop uint64) {
 	if e.ignored {
 		return
 	}
-	if c.dev == Camera {
-		c.dst.Camera = append(c.dst.Camera, e.app)
-	} else {
-		c.dst.Mic = append(c.dst.Mic, e.app)
+	app := e.app
+	if e.exe != "" && c.procs != nil {
+		// Only now, with an app in use, look at the running programs: a
+		// steady poll with nothing in use costs nothing more.
+		if !c.polled {
+			c.polled = c.procs.refresh() == nil
+		}
+		if c.polled && !c.procs.running(e.exe) {
+			return // stale entry: the program is gone
+		}
+		if c.polled && e.browser {
+			app = c.webApp(app, e.exe)
+		}
 	}
+	if c.dev == Camera {
+		c.dst.Camera = append(c.dst.Camera, app)
+	} else {
+		c.dst.Mic = append(c.dst.Mic, app)
+	}
+}
+
+// webApp names the web app a browser is running, from its window titles:
+// "Teams (Firefox)" for a Teams call in Firefox. The browser name stays when
+// no window title names a known web app.
+func (c *consentStore) webApp(browser App, exe string) App {
+	var found string
+	c.procs.titles(exe, func(title string) bool {
+		found = WebAppFromTitle(title)
+		return found == ""
+	})
+	if found != "" {
+		browser.Name, browser.Known = found+" ("+browser.Name+")", true
+	}
+	return browser
 }
 
 // describe builds the App for a consent store key, once per key.
@@ -165,7 +215,11 @@ func (c *consentStore) describe(key string, packaged bool) cachedEntry {
 	} else {
 		app.Name = fallbackName(id, packaged)
 	}
-	return cachedEntry{app: app, ignored: c.ignore[lower]}
+	e := cachedEntry{app: app, ignored: c.ignore[lower]}
+	if !packaged {
+		e.exe, e.browser = lower, browsers[lower]
+	}
+	return e
 }
 
 func (c *consentStore) Close() error { return c.w.close() }
