@@ -31,21 +31,50 @@ Source: `api.proto` ("BASE PACKETS") and
 - A first byte of `0x01` means the device uses Noise encryption: the client
   returns `ErrRequiresEncryption`.
 
-### Noise frames (milestone 4)
+### Noise encryption
+
+Selected when an encryption key is configured. Sources:
+`aioesphomeapi/_frame_helper/noise.py`, `noise_encryption.py`, and the device
+side, `esphome/components/api/api_frame_helper_noise.cpp`.
+
+- Protocol: `Noise_NNpsk0_25519_ChaChaPoly_SHA256` (flynn/noise).
+- PSK: the base64 key from `api: encryption: key:`, which decodes to 32 bytes.
+  Anything else is `ErrInvalidKeyFormat`.
+- Prologue: `NoiseAPIInit` followed by the 2-byte length of the empty
+  ClientHello frame, i.e. `NoiseAPIInit\x00\x00`. The device builds it from
+  the frame it received; aioesphomeapi hard-codes it.
+- Every frame: `0x01 | uint16 BE(length) | data`.
+
+Handshake:
 
 ```
-0x01 | uint16 BE(frame length) | frame
+client → 01 00 00                         empty ClientHello frame
+client → 01 len | 00 | Noise message 1    (sent in the same write)
+device → 01 len | 01 | name 00 | mac 00   ServerHello; 0x01 = the protocol above
+device → 01 len | 00 | Noise message 2    handshake response
+         01 len | 01 | reason             or a rejection
 ```
 
-After the handshake, each frame is encrypted. The decrypted payload is
-`uint16 BE(message type) | uint16 BE(payload length) | payload`. Source:
-`aioesphomeapi/_frame_helper/noise.py`, `make_noise_packets` and
-`_handle_frame`.
+- The name in ServerHello exists since ESPHome 2022.2, the MAC since 2025.4.
+  If a name is expected, it is checked here, before any key material is
+  used.
+- The rejection reason `Handshake MAC failure` means the key is wrong
+  (`ErrInvalidKey`). So does a response that fails to authenticate. Any other
+  reason is `ErrHandshake`.
+- A device without encryption answers with plaintext frames (first byte
+  `0x00`), giving `ErrDevicePlaintext`. Some devices simply close the
+  connection instead (`ErrClosed`, with a hint).
+
+After the handshake, each frame carries a ChaChaPoly ciphertext. The decrypted
+data is `uint16 BE(message type) | uint16 BE(payload length) | payload`. As in
+aioesphomeapi (`_handle_frame`), the inner length is not trusted: the payload
+is the rest of the decrypted data, which must be at least 4 bytes. A frame that
+fails to decrypt closes the connection (`ErrProtocol`).
 
 ## Connection setup
 
 1. TCP connect.
-2. Noise handshake, only when a key is configured (milestone 4).
+2. Noise handshake, only when a key is configured (see above).
 3. The client sends `HelloRequest{client_info, api_version_major: 1, api_version_minor: 19}` and waits for `HelloResponse`. The response carries `name` (the device name) and `server_info` (the ESPHome version).
    - Following aioesphomeapi (`connection.py`, `_process_hello_resp`), a response with major version > 2 is rejected (`ErrIncompatibleAPI`).
    - If a name is expected and differs, the client fails with `ErrBadName`.
@@ -106,7 +135,22 @@ when it uses Home Assistant time.
   - framing vectors produced with aioesphomeapi's `make_plain_text_packets`;
   - a fuzz test of the frame reader;
   - connection tests against an in-process fake device (`fakedevice_test.go`).
+- **Noise vectors** (`testdata/noise_vectors.json`): a complete exchange
+  recorded with fixed ephemeral keys by the Python `noise` library, which is
+  what aioesphomeapi uses (`testdata/gen_noise_vectors.py`). The Go client
+  reproduces it byte for byte: handshake, ServerHello parsing, one encrypted
+  frame in each direction.
+- **Interop with aioesphomeapi** (`TestInteropFakeDevice`,
+  `testdata/interop_aioesphomeapi.py`): the reference client connects over
+  Noise to the fake device built on this package's transport. It completes
+  the handshake, Hello, entity listing and commands. With a wrong key it
+  reports `InvalidEncryptionKeyAPIError`.
 - **Integration tests** (`scripts/itest-host.sh`): the same client against
   `firmware/host-test.yaml` compiled for ESPHome's host platform. They check
   status changes, localized labels and the watchdog. They run in CI and on
   any Linux machine with ESPHome installed.
+  - `firmware/host-test-noise.yaml` runs the same tests encrypted, plus
+    checks that a wrong key and a missing key are rejected
+    (`KNOCKBLOCK_ITEST_KEY`).
+  - The encrypted host build fetches noise-c and libsodium from the
+    PlatformIO registry, so it needs that registry to be reachable (CI is).

@@ -124,3 +124,9 @@ jobs:
 
       - name: Plaintext
         run: scripts/itest-host.sh host-test.yaml
+
+      - name: Noise encryption
+        env:
+          # The fixed test key of firmware/host-test-noise.yaml.
+          KNOCKBLOCK_ITEST_KEY: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+        run: scripts/itest-host.sh host-test-noise.yaml

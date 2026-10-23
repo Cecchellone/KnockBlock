@@ -42,3 +42,4 @@ cd "$root/client"
 GOTOOLCHAIN="$(awk '/^toolchain /{print $2}' go.mod)" \
 	KNOCKBLOCK_ITEST_ADDR="127.0.0.1:$port" \
 	go test -tags integration -count=1 -v -run Integration ./internal/espapi/
+# KNOCKBLOCK_ITEST_KEY, if set, is inherited by go test.

@@ -43,7 +43,7 @@ type Options struct {
 	// Address is "host:port" or just "host"; the port defaults to 6053.
 	Address string
 	// EncryptionKey is the device's base64 Noise key (api: encryption: key:).
-	// Empty selects the plaintext transport.
+	// Empty selects the plaintext transport. The key is never logged.
 	EncryptionKey string
 	// ClientInfo identifies this client to the device, like a User-Agent.
 	ClientInfo string
@@ -69,6 +69,7 @@ type Conn struct {
 
 	deviceName string
 	serverInfo string
+	mac        string // from the Noise ServerHello; empty for plaintext
 	apiMajor   uint32
 	apiMinor   uint32
 
@@ -163,14 +164,25 @@ func (c *Conn) setup(ctx context.Context, opts Options) error {
 	return nil
 }
 
-// handshake sets up the transport.
+// handshake sets up the transport: plaintext without a key, otherwise the
+// Noise handshake.
 func (c *Conn) handshake(opts Options) error {
 	br := bufio.NewReaderSize(c.nc, 1024)
 	if opts.EncryptionKey == "" {
 		c.tr = newPlaintextTransport(br, c.nc)
 		return nil
 	}
-	return errors.New("espapi: encrypted connections are not supported yet")
+	psk, err := decodeNoiseKey(opts.EncryptionKey)
+	if err != nil {
+		return err
+	}
+	tr, hello, err := noiseClientHandshake(br, c.nc, psk, opts.ExpectedName, nil)
+	if err != nil {
+		return err
+	}
+	c.tr = tr
+	c.mac = hello.mac
+	return nil
 }
 
 // hello sends HelloRequest and waits for HelloResponse
@@ -216,6 +228,10 @@ func (c *Conn) hello(opts Options) error {
 
 // DeviceName is the device name reported in HelloResponse.
 func (c *Conn) DeviceName() string { return c.deviceName }
+
+// MACAddress is the device MAC address announced during the Noise handshake,
+// or empty for plaintext connections.
+func (c *Conn) MACAddress() string { return c.mac }
 
 // ServerInfo describes the device firmware, e.g. its ESPHome version.
 func (c *Conn) ServerInfo() string { return c.serverInfo }

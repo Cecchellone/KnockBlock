@@ -13,6 +13,7 @@ package espapi
 import (
 	"bufio"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,5 +158,34 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// With an encrypted device, a wrong key and no key are both rejected.
+func TestIntegrationKeyErrors(t *testing.T) {
+	addr := os.Getenv("KNOCKBLOCK_ITEST_ADDR")
+	if addr == "" || os.Getenv("KNOCKBLOCK_ITEST_KEY") == "" {
+		t.Skip("needs KNOCKBLOCK_ITEST_ADDR and KNOCKBLOCK_ITEST_KEY")
+	}
+	tests := []struct {
+		name string
+		key  string
+		want error
+	}{
+		{"wrong key", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=", ErrInvalidKey},
+		{"no key", "", ErrRequiresEncryption},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			c, err := Dial(ctx, Options{Address: addr, EncryptionKey: tt.key, ClientInfo: "KnockBlock integration test"})
+			if err == nil {
+				c.Close()
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }

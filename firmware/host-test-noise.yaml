@@ -1,0 +1,15 @@
+# host-test.yaml with Noise encryption, for the encrypted integration test
+# (scripts/itest-host.sh host-test-noise.yaml).
+#
+# The key below is a fixed TEST key, public on purpose: never use it on a
+# real device.
+
+packages:
+  base: !include host-test.yaml
+
+esphome:
+  name: knockblock-host-noise
+
+api:
+  encryption:
+    key: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="

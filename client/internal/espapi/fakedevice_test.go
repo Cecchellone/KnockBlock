@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/flynn/noise"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/espapi/pb"
@@ -31,6 +32,7 @@ type fakeDevice struct {
 	apiMajor    uint32
 	ignorePings bool   // never answer PingRequest
 	preamble    []byte // if set, sent before closing, instead of speaking the protocol
+	psk         []byte // if set, the device requires Noise with this key
 
 	mu        sync.Mutex
 	status    string
@@ -81,9 +83,9 @@ func (d *fakeDevice) serve() {
 		if err != nil {
 			return
 		}
+		br := bufio.NewReader(nc)
 		d.mu.Lock()
 		d.conn = nc
-		d.tr = newPlaintextTransport(bufio.NewReader(nc), nc)
 		d.mu.Unlock()
 		close(d.connected)
 		if d.preamble != nil {
@@ -91,6 +93,17 @@ func (d *fakeDevice) serve() {
 			nc.Close()
 			return
 		}
+		var tr transport = newPlaintextTransport(br, nc)
+		if d.psk != nil {
+			var ok bool
+			if tr, ok = d.noiseHandshake(br, nc); !ok {
+				nc.Close()
+				return
+			}
+		}
+		d.mu.Lock()
+		d.tr = tr
+		d.mu.Unlock()
 		d.loop()
 	}()
 }
@@ -101,6 +114,12 @@ func (d *fakeDevice) loop() {
 		id, payload, err := d.tr.readFrame()
 		if err != nil {
 			return
+		}
+		if id == idOf((*pb.DeviceInfoRequest)(nil)) {
+			// Not used by this client, but aioesphomeapi waits for it
+			// (interop test).
+			d.send(&pb.DeviceInfoResponse{Name: d.name, MacAddress: "AA:BB:CC:DD:EE:FF", EsphomeVersion: "2026.10.0"})
+			continue
 		}
 		mt, ok := table.byID[id]
 		if !ok {
@@ -175,6 +194,44 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 		return false
 	}
 	return true
+}
+
+// noiseHandshake runs the device side of the Noise handshake, as
+// api_frame_helper_noise.cpp does, and reports whether it succeeded.
+func (d *fakeDevice) noiseHandshake(br *bufio.Reader, nc net.Conn) (transport, bool) {
+	var buf []byte
+	if hello, err := readNoiseFrame(br, &buf); err != nil || len(hello) != 0 {
+		d.t.Errorf("fake device: ClientHello %x, %v", hello, err)
+		return nil, false
+	}
+	msg, err := readNoiseFrame(br, &buf)
+	if err != nil || len(msg) == 0 || msg[0] != 0 {
+		d.t.Errorf("fake device: handshake frame %x, %v", msg, err)
+		return nil, false
+	}
+	nc.Write(appendNoiseFrame(nil, []byte("\x01"+d.name+"\x00AA:BB:CC:DD:EE:FF\x00")))
+
+	hs, err := noise.NewHandshakeState(noise.Config{
+		CipherSuite:  noiseSuite,
+		Pattern:      noise.HandshakeNN,
+		Prologue:     noisePrologue,
+		PresharedKey: d.psk,
+	})
+	if err != nil {
+		d.t.Errorf("fake device: %v", err)
+		return nil, false
+	}
+	if _, _, _, err := hs.ReadMessage(nil, msg[1:]); err != nil {
+		nc.Write(appendNoiseFrame(nil, []byte("\x01"+invalidKeyReason)))
+		return nil, false
+	}
+	reply, toDevice, toClient, err := hs.WriteMessage(nil, nil)
+	if err != nil {
+		d.t.Errorf("fake device: %v", err)
+		return nil, false
+	}
+	nc.Write(appendNoiseFrame(nil, append([]byte{0}, reply...)))
+	return newNoiseTransport(br, nc, toClient, toDevice), true
 }
 
 // send writes a message to the client.
