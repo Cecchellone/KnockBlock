@@ -110,6 +110,8 @@ These three requirements drive every design decision. If a change conflicts with
   - `button` **`heartbeat`** — keeps the manual source alive.
   - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
   - `switch` **`flip_display`** (board) — rotates the picture by 180° (restored across reboots).
+  - `number` **`led_brightness`** (board) — default status LED brightness in %, restored; the PC settings' Light tab shows it.
+  - Display layout (board): a slightly darker info bar at the top (PC left, app centre, clock or call minutes right; `privacy_mode` hides PC and app) and the localized label below. The clock comes from SNTP (`timezone` substitution).
   - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a notification with a chime.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
 - **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `dnd` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.

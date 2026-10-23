@@ -22,6 +22,11 @@ changes per minor version.
   `Ring doorbell` button fire a `doorbell` event. The display shows a bell
   and the LED blinks white. Rings closer than 3 s count as one.
 - `Flip display` switch turns the picture upside down; kept across reboots.
+- New layout: a darker info bar at the top shows the PC on the left, the app
+  in the middle and the time on the right, or the minutes since the call
+  started during a call. The time comes from the internet (SNTP); set
+  `timezone` if you are not in Italy's time zone.
+- `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
 
 ### PC app (Windows)
 

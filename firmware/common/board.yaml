@@ -22,6 +22,8 @@ substitutions:
   # Defaults; override them in the including file.
   name: knockblock
   friendly_name: KnockBlock
+  # Time zone of the clock in the info bar (tz database name).
+  timezone: Europe/Rome
   # Button that rings the doorbell: the BOOT button by default. For an
   # external push button, wire it between a free GPIO and GND and set the
   # GPIO here.
@@ -75,6 +77,11 @@ globals:
     type: Color
     initial_value: Color(0x30, 0x30, 0x30)
 
+  # millis() when the combined status became `call`; 0 when not in a call.
+  - id: call_start
+    type: uint32_t
+    initial_value: "0"
+
   # True while the display shows the doorbell instead of the status.
   - id: doorbell_shown
     type: bool
@@ -93,14 +100,14 @@ font:
     glyphsets: [GF_Latin_Kernel]
     glyphs: ["àèéìòùÀÈÉÌÒÙ"]
 
-  # App and PC names under the label. They come from the PC apps, so they are
+  # The info bar: PC, app and time. Names come from the PC apps, so they are
   # not checked; characters outside this set are not drawn.
   - file:
       type: gfonts
       family: Roboto
       weight: 500
     id: font_detail
-    size: 22
+    size: 18
     glyphsets: [GF_Latin_Kernel]
     glyphs: ["àèéìòùÀÈÉÌÒÙ·"]
 
@@ -113,8 +120,9 @@ display:
     model: WAVESHARE-ESP32-C6-LCD-1.47
     # Landscape: 320x172. The flip_display switch turns it to 270.
     rotation: 90
-    # Redrawn on every status change; the interval is only a safety net.
-    update_interval: 60s
+    # Redrawn on every status change and every minute (clock); the
+    # interval also refreshes the call minutes before the clock is set.
+    update_interval: 30s
     lambda: |-
       const Color bg = id(current_color);
       // Black text on light backgrounds, white otherwise.
@@ -139,38 +147,80 @@ display:
         return;
       }
 
-      // "Teams · PC-STUDIO" under the label, unless privacy mode is on or
-      // the status has no source (manual or offline).
-      std::string detail;
-      if (!id(privacy_mode).state) {
-        const std::string &app = id(active_app).state;
-        const std::string &pc = id(active_pc).state;
-        detail = app.empty() || pc.empty() ? app + pc : app + " · " + pc;
-      }
-      const int cx = it.get_width() / 2;
+      // Info bar at the top, slightly darker: the PC on the left, the app in
+      // the middle (both hidden in privacy mode, and empty when the status
+      // has no source), and on the right the minutes in a call, else the
+      // time.
+      const int W = it.get_width(), H = it.get_height(), bar = 30;
+      it.filled_rectangle(0, 0, W, bar, Color(bg.r * 3 / 4, bg.g * 3 / 4, bg.b * 3 / 4));
       int x1, y1, w, h;
-      if (!detail.empty()) {
-        it.get_text_bounds(cx, 0, detail.c_str(), id(font_detail), TextAlign::TOP_CENTER, &x1, &y1, &w, &h);
-        // Too wide: keep the app only.
-        if (w > it.get_width() - 8 && !id(active_app).state.empty())
-          detail = id(active_app).state;
-        it.print(cx, it.get_height() - 18, id(font_detail), fg, TextAlign::CENTER, detail.c_str());
+      // Cuts text (whole UTF-8 characters) until it fits in maxw pixels.
+      auto fit = [&](std::string s, int maxw) {
+        while (!s.empty()) {
+          it.get_text_bounds(0, 0, s.c_str(), id(font_detail), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+          if (w <= maxw)
+            break;
+          do s.pop_back(); while (!s.empty() && (s.back() & 0xC0) == 0x80);
+        }
+        return s;
+      };
+      char right[16] = "";
+      if (id(call_start) != 0) {
+        snprintf(right, sizeof(right), "%u min", (unsigned) ((millis() - id(call_start)) / 60000));
+      } else {
+        auto now = id(sntp_time).now();
+        if (now.is_valid())
+          now.strftime(right, sizeof(right), "%H:%M");
       }
-      // The label is centered in the space left above the detail line.
-      const int cy = detail.empty() ? it.get_height() / 2 : (it.get_height() - 30) / 2;
+      it.print(W - 6, bar / 2, id(font_detail), fg, TextAlign::CENTER_RIGHT, right);
+      if (!id(privacy_mode).state) {
+        it.print(6, bar / 2, id(font_detail), fg, TextAlign::CENTER_LEFT, fit(id(active_pc).state, 92).c_str());
+        it.print(W / 2, bar / 2, id(font_detail), fg, TextAlign::CENTER, fit(id(active_app).state, 120).c_str());
+      }
 
+      // The status label, centered below the bar; two lines if too wide.
+      const int cx = W / 2, cy = bar + (H - bar) / 2;
       const std::string &text = id(status_label).state;
       it.get_text_bounds(cx, cy, text.c_str(), id(font_label), TextAlign::CENTER, &x1, &y1, &w, &h);
       const size_t split = text.rfind(' ', text.size() / 2 + 1);
-      if (w <= it.get_width() - 16 || split == std::string::npos) {
+      if (w <= W - 16 || split == std::string::npos) {
         it.print(cx, cy, id(font_label), fg, TextAlign::CENTER, text.c_str());
         return;
       }
-      // Too wide for one line: break at the space closest to the middle.
+      // Break at the space closest to the middle.
       const std::string first = text.substr(0, split);
       const std::string second = text.substr(split + 1);
       it.print(cx, cy - h / 2 - 4, id(font_label), fg, TextAlign::CENTER, first.c_str());
       it.print(cx, cy + h / 2 + 4, id(font_label), fg, TextAlign::CENTER, second.c_str());
+
+time:
+  # The clock in the info bar, from the internet. Home Assistant is not
+  # needed.
+  - platform: sntp
+    id: sntp_time
+    timezone: ${timezone}
+    on_time:
+      - seconds: 0
+        then:
+          - component.update: main_display
+
+number:
+  # Brightness of the status LED, kept across reboots. Home Assistant can
+  # still drive the LED directly until the next status change.
+  - platform: template
+    id: led_brightness
+    name: LED brightness
+    icon: mdi:brightness-percent
+    entity_category: config
+    unit_of_measurement: "%"
+    min_value: 5
+    max_value: 100
+    step: 5
+    initial_value: 60
+    optimistic: true
+    restore_value: true
+    on_value:
+      - script.execute: apply_status
 
 binary_sensor:
   - platform: gpio
@@ -259,6 +309,10 @@ script:
           else if (st == "call") c = id(color_call);
           else if (st == "dnd") c = id(color_dnd);
           id(current_color) = c;
+          if (st != "call")
+            id(call_start) = 0;
+          else if (id(call_start) == 0)
+            id(call_start) = std::max<uint32_t>(millis(), 1);
       - if:
           condition:
             lambda: 'return id(status).current_option() == "offline";'
@@ -267,7 +321,7 @@ script:
           else:
             - light.turn_on:
                 id: status_led
-                brightness: 60%
+                brightness: !lambda 'return id(led_brightness).state / 100.0f;'
                 red: !lambda 'return id(current_color).r / 255.0f;'
                 green: !lambda 'return id(current_color).g / 255.0f;'
                 blue: !lambda 'return id(current_color).b / 255.0f;'
