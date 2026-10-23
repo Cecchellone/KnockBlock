@@ -252,8 +252,8 @@ func (c *Conn) Err() error {
 	}
 }
 
-// ListEntities returns the select, button, text sensor, switch, event and
-// action entities of the device. Other entity types are skipped.
+// ListEntities returns the select, button, text sensor, switch, event,
+// light, number and action entities of the device. Other entity types are skipped.
 func (c *Conn) ListEntities(ctx context.Context) (Entities, error) {
 	l := &listing{done: make(chan struct{})}
 	c.mu.Lock()
@@ -304,6 +304,20 @@ func (c *Conn) SetSelect(ctx context.Context, key uint32, option string) error {
 // SetSwitch turns a switch entity on or off.
 func (c *Conn) SetSwitch(ctx context.Context, key uint32, on bool) error {
 	return c.send(ctx, &pb.SwitchCommandRequest{Key: key, State: on})
+}
+
+// SetLight turns a light on or off and, if on, sets its brightness (0 to 1).
+func (c *Conn) SetLight(ctx context.Context, key uint32, on bool, brightness float64) error {
+	m := &pb.LightCommandRequest{Key: key, HasState: true, State: on}
+	if on {
+		m.HasBrightness, m.Brightness = true, float32(brightness)
+	}
+	return c.send(ctx, m)
+}
+
+// SetNumber sets a number entity.
+func (c *Conn) SetNumber(ctx context.Context, key uint32, value float64) error {
+	return c.send(ctx, &pb.NumberCommandRequest{Key: key, State: float32(value)})
 }
 
 // PressButton presses a button entity.
@@ -455,6 +469,14 @@ func (c *Conn) handle(msg proto.Message) {
 			v = "on"
 		}
 		c.emit(State{Key: m.GetKey(), Value: v, Missing: m.GetMissingState()})
+	case *pb.LightStateResponse:
+		v := "off"
+		if m.GetState() {
+			v = "on"
+		}
+		c.emit(State{Key: m.GetKey(), Value: v, Number: float64(m.GetBrightness())})
+	case *pb.NumberStateResponse:
+		c.emit(State{Key: m.GetKey(), Number: float64(m.GetState()), Missing: m.GetMissingState()})
 	case *pb.EventResponse:
 		c.emit(State{Key: m.GetKey(), Value: m.GetEventType()})
 	default:

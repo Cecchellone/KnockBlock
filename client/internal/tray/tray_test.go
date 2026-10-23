@@ -191,7 +191,6 @@ func TestEngine(t *testing.T) {
 	cfg := config.Default()
 	cfg.Host = "light.lan"
 	cfg.PCName = "DESK"
-	cfg.DisplayLanguage = "it"
 	cfg.AppNames = map[string]string{"discord.exe": "Disco"}
 	if err := cfg.SetKey("k"); err != nil {
 		t.Fatal(err)
@@ -221,17 +220,12 @@ func TestEngine(t *testing.T) {
 		t.Errorf("dial options %+v", dialed[0])
 	}
 	mu.Unlock()
-	conn.mu.Lock()
-	if len(conn.selects) != 1 || conn.selects[0] != "it" {
-		t.Errorf("display language not set: %v", conn.selects)
-	}
-	conn.mu.Unlock()
 
 	e.SetOverride(status.ForceDND)
 	waitFor("DESK dnd ")
 
-	// Restarting with a new name reports the old one offline first; the
-	// override survives.
+	// A new name, on the same device, is applied without reconnecting: the
+	// old name is reported offline first and the override survives.
 	cfg.PCName = "LAPTOP"
 	if err := e.Start(cfg); err != nil {
 		t.Fatal(err)
@@ -248,6 +242,35 @@ func TestEngine(t *testing.T) {
 	if !sawOffline {
 		t.Error("old PC name not reported offline on restart")
 	}
+	mu.Lock()
+	if len(dialed) != 1 {
+		t.Errorf("%d connections for a PC name change, want 1", len(dialed))
+	}
+	mu.Unlock()
+
+	// Turning the doorbell off needs no reconnection either.
+	cfg.Doorbell = false
+	if err := e.Start(cfg); err != nil {
+		t.Fatal(err)
+	}
+	conn.ring()
+	mu.Lock()
+	if rings != 1 || len(dialed) != 1 {
+		t.Errorf("doorbell off: %d rings, %d connections", rings, len(dialed))
+	}
+	mu.Unlock()
+
+	// A new address reconnects.
+	cfg.Host = "other.lan"
+	if err := e.Start(cfg); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("LAPTOP dnd ")
+	mu.Lock()
+	if len(dialed) != 2 || dialed[1].Address != "other.lan:6053" {
+		t.Errorf("new address: dialed %+v", dialed)
+	}
+	mu.Unlock()
 	e.Stop()
 	if conn.last() != "LAPTOP offline " {
 		t.Errorf("stop did not report offline: %q", conn.last())

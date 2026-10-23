@@ -181,11 +181,14 @@ jobs:
             $p = Start-Process $exe -ArgumentList '-settings-smoke', "`"$png`"" -PassThru -Wait
             Select-String -Path $log -Pattern 'settings smoke test|private_working_set' | Select-Object -Last 2 | ForEach-Object { $_.Line }
             if ($p.ExitCode -ne 0) { Get-Content $log -Tail 20; throw "settings window ($lang) failed: exit code $($p.ExitCode)" }
-            if (-not (Test-Path $png)) { throw "no settings screenshot for $lang" }
-            $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($png))
-            Write-Host "::group::settings-$lang.png (base64)"
-            $b64 -split '(.{76})' | Where-Object { $_ } | ForEach-Object { Write-Host "PNG-$lang $_" }
-            Write-Host "::endgroup::"
+            foreach ($tab in 1..4) {
+              $shot = Join-Path (Resolve-Path screenshots) "settings-$lang-$tab.png"
+              if (-not (Test-Path $shot)) { throw "no settings screenshot for $lang, tab $tab" }
+              $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($shot))
+              Write-Host "::group::settings-$lang-$tab.png (base64)"
+              $b64 -split '(.{76})' | Where-Object { $_ } | ForEach-Object { Write-Host "PNG-$lang-$tab $_" }
+              Write-Host "::endgroup::"
+            }
           }
           Set-Content -Path (Join-Path $cfgDir 'config.json') -Value '{}'
 

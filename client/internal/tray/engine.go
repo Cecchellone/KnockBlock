@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/agent"
 	"github.com/Cecchellone/KnockBlock/client/internal/config"
@@ -26,9 +27,13 @@ type Deps struct {
 }
 
 // Engine runs the presence loop (detector → agent → link) for one
-// configuration, and restarts it when the configuration changes.
+// configuration. A new configuration with the same device address and key
+// is applied without reconnecting; otherwise the loop restarts.
 type Engine struct {
 	deps Deps
+	// doorbell is read by the connection's doorbell hook, so turning the
+	// setting on or off needs no reconnection.
+	doorbell atomic.Bool
 
 	mu       sync.Mutex
 	override status.Override
@@ -36,13 +41,14 @@ type Engine struct {
 }
 
 type running struct {
-	det        detect.Detector
-	sup        *link.Supervisor
-	agent      *agent.Agent
-	stopAgent  context.CancelFunc
-	stopSup    context.CancelFunc
-	agentDone  chan struct{}
-	supervisor chan struct{}
+	address, key string
+	det          detect.Detector
+	sup          *link.Supervisor
+	agent        *agent.Agent
+	stopAgent    context.CancelFunc
+	stopSup      context.CancelFunc
+	agentDone    chan struct{}
+	supervisor   chan struct{}
 }
 
 // NewEngine returns a stopped engine.
@@ -53,10 +59,12 @@ func NewEngine(deps Deps) *Engine {
 	return &Engine{deps: deps}
 }
 
-// Start (re)starts the loop with cfg. A running loop is stopped first,
-// reporting offline, so a changed PC name does not linger on the device.
+// Start starts the loop with cfg, or applies cfg to the running loop. Only
+// a change of device address or key reconnects (the tray shows
+// "connecting" meanwhile); the PC name, the detection settings and the
+// doorbell setting change in place. A changed PC name is reported offline
+// first, so it does not linger on the device.
 func (e *Engine) Start(cfg config.Config) error {
-	e.Stop()
 	key, err := cfg.Key()
 	if err != nil {
 		return err
@@ -69,15 +77,34 @@ func (e *Engine) Start(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	e.doorbell.Store(cfg.Doorbell)
+
+	e.mu.Lock()
+	if r := e.run; r != nil && r.address == cfg.Address() && r.key == key {
+		r.det = det
+		r.agent.Update(pc, cfg.SendAppNames, det)
+		e.mu.Unlock()
+		e.deps.Logger.Info("engine updated", "pc", pc)
+		return nil
+	}
+	e.mu.Unlock()
+	e.Stop()
+
+	var onConnect func(context.Context, link.Conn, espapi.Entities) error
+	if e.deps.OnDoorbell != nil {
+		onConnect = link.WatchDoorbell(func() {
+			on := e.doorbell.Load()
+			e.deps.Logger.Info("doorbell event from the light", "notify", on)
+			if on {
+				e.deps.OnDoorbell()
+			}
+		})
+	}
 	sup := link.New(link.Options{
-		Dial:    e.deps.Dial(espapi.Options{Address: cfg.Address(), EncryptionKey: key, ClientInfo: e.deps.ClientInfo, Logger: e.deps.Logger}),
-		OnState: e.deps.OnState,
-		OnConnect: link.Hooks(
-			link.SetDisplayLanguage(cfg.DisplayLanguage),
-			link.SetDisplayFlip(cfg.DisplayFlip),
-			e.watchDoorbell(cfg),
-		),
-		Logger: e.deps.Logger,
+		Dial:      e.deps.Dial(espapi.Options{Address: cfg.Address(), EncryptionKey: key, ClientInfo: e.deps.ClientInfo, Logger: e.deps.Logger}),
+		OnState:   e.deps.OnState,
+		OnConnect: onConnect,
+		Logger:    e.deps.Logger,
 	})
 	a := agent.New(agent.Config{
 		PC: pc, SendApps: cfg.SendAppNames, Detector: det, Link: sup,
@@ -87,7 +114,7 @@ func (e *Engine) Start(cfg config.Config) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	a.SetOverride(e.override)
-	r := &running{det: det, sup: sup, agent: a, agentDone: make(chan struct{}), supervisor: make(chan struct{})}
+	r := &running{address: cfg.Address(), key: key, det: det, sup: sup, agent: a, agentDone: make(chan struct{}), supervisor: make(chan struct{})}
 	supCtx, stopSup := context.WithCancel(context.Background())
 	agentCtx, stopAgent := context.WithCancel(context.Background())
 	r.stopSup, r.stopAgent = stopSup, stopAgent
@@ -96,14 +123,6 @@ func (e *Engine) Start(cfg config.Config) error {
 	e.run = r
 	e.deps.Logger.Info("engine started", "device", cfg.Address(), "pc", pc)
 	return nil
-}
-
-// watchDoorbell forwards doorbell rings to OnDoorbell, when enabled.
-func (e *Engine) watchDoorbell(cfg config.Config) func(context.Context, link.Conn, espapi.Entities) error {
-	if !cfg.Doorbell || e.deps.OnDoorbell == nil {
-		return nil
-	}
-	return link.WatchDoorbell(e.deps.OnDoorbell)
 }
 
 // Stop stops the loop: the agent first, so its offline report still goes

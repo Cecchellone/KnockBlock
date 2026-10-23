@@ -31,6 +31,13 @@ changes per minor version.
 - `knockctl ring` and `knockctl flip on|off` for trying them out.
 - The settings are a native Windows window instead of a page in the
   browser. It exists only while open.
+- The settings window has tabs: Connection, Light, This PC, Apps. The
+  Light tab reads the light's own settings (display language, orientation,
+  display brightness, LED brightness, privacy) and saves them on the light.
+- Saving the settings no longer drops the connection unless the address or
+  the key changed.
+- An app that crashed or was closed no longer shows as using the
+  microphone (stale Windows entries are ignored).
 
 ## [0.1.0]
 

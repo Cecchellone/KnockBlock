@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -97,26 +98,38 @@ func run(o options) error {
 	})
 }
 
-// settingsSmoke opens the settings window, checks it has its controls, saves
-// a screenshot and logs the memory it uses while open, then closes it.
+// settingsSmoke opens the settings window, checks it has its controls,
+// saves a screenshot of every tab (FILE-1.png, FILE-2.png, …, from FILE
+// without its extension) and logs the memory used while open, then closes
+// it.
 func settingsSmoke(w *settingsui.Window, file string, log *slog.Logger) error {
 	if err := w.Open(); err != nil {
 		log.Error("settings smoke test", "err", err)
 		return err
 	}
-	time.Sleep(time.Second) // let it paint
-	out, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	controls, err := w.Capture(out)
-	if cerr := out.Close(); err == nil {
-		err = cerr
+	time.Sleep(4 * time.Second) // let it paint and give up on the light
+	base := strings.TrimSuffix(file, filepath.Ext(file))
+	var controls int
+	var err error
+	for i := range settingsui.Tabs {
+		w.SelectTab(i)
+		time.Sleep(300 * time.Millisecond)
+		var out *os.File
+		if out, err = os.Create(fmt.Sprintf("%s-%d.png", base, i+1)); err != nil {
+			break
+		}
+		controls, err = w.Capture(out)
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			break
+		}
 	}
 	runtime.GC()
 	memdebug.Log(log)
 	w.Close()
-	log.Info("settings smoke test", "controls", controls, "screenshot", file, "err", err)
+	log.Info("settings smoke test", "controls", controls, "screenshots", base+"-N.png", "err", err)
 	if err == nil && controls < 30 {
 		err = fmt.Errorf("settings window has %d controls", controls)
 	}

@@ -48,7 +48,6 @@
   "settings.language": "App language",
   "settings.language_auto": "Same as Windows",
   "settings.display_language": "Light display language",
-  "settings.display_language_keep": "Leave unchanged",
   "settings.send_apps": "Show on the light which app is in use (e.g. Teams)",
   "settings.display_flip": "Light display orientation",
   "settings.display_flip_off": "Normal",
@@ -67,5 +66,14 @@
   "settings.err_host": "the address is empty",
   "settings.err_port": "the port must be between 1 and 65535",
   "settings.err_key": "the key must be the base64 key from the firmware (32 bytes)",
-  "settings.err_names": "line {line} of the app names is not \"executable = name\""
+  "settings.err_names": "line {line} of the app names is not \"executable = name\"",
+  "settings.tab_connection": "Connection",
+  "settings.device_connecting": "Reading the light's settings…",
+  "settings.device_ready": "Settings stored on {device}: they apply to every PC and to Home Assistant.",
+  "settings.device_unreachable": "The light cannot be reached, so its settings are not shown. Check the Connection tab, save, and open the settings again.",
+  "settings.display_brightness": "Display brightness",
+  "settings.led_brightness": "LED brightness",
+  "settings.privacy": "Hide app and PC names on the light's display",
+  "settings.device_error": "The light's settings were not changed: {error}",
+  "settings.off": "Off"
 }

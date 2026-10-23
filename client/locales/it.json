@@ -48,7 +48,6 @@
   "settings.language": "Lingua dell'app",
   "settings.language_auto": "Come Windows",
   "settings.display_language": "Lingua del display della luce",
-  "settings.display_language_keep": "Non modificare",
   "settings.send_apps": "Mostra sulla luce quale app è in uso (ad es. Teams)",
   "settings.display_flip": "Orientamento del display della luce",
   "settings.display_flip_off": "Normale",
@@ -67,5 +66,14 @@
   "settings.err_host": "l'indirizzo è vuoto",
   "settings.err_port": "la porta deve essere tra 1 e 65535",
   "settings.err_key": "la chiave deve essere quella in base64 del firmware (32 byte)",
-  "settings.err_names": "la riga {line} dei nomi delle app non è \"eseguibile = nome\""
+  "settings.err_names": "la riga {line} dei nomi delle app non è \"eseguibile = nome\"",
+  "settings.tab_connection": "Connessione",
+  "settings.device_connecting": "Lettura delle impostazioni dalla luce…",
+  "settings.device_ready": "Impostazioni salvate su {device}: valgono per tutti i PC e per Home Assistant.",
+  "settings.device_unreachable": "La luce non è raggiungibile, quindi le sue impostazioni non sono disponibili. Controlla la scheda Connessione, salva e riapri le impostazioni.",
+  "settings.display_brightness": "Luminosità del display",
+  "settings.led_brightness": "Luminosità del LED",
+  "settings.privacy": "Nascondi app e nome del PC sul display della luce",
+  "settings.device_error": "Le impostazioni della luce non sono state cambiate: {error}",
+  "settings.off": "Spento"
 }

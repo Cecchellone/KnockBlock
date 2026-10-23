@@ -22,6 +22,8 @@ const (
 	keyFlip        = 106
 	keyDoorbell    = 107
 	keyRing        = 108
+	keyBacklight   = 109
+	keyLED         = 110
 )
 
 // fakeDevice is a minimal ESPHome device for tests: it speaks the server
@@ -42,6 +44,8 @@ type fakeDevice struct {
 	status    string
 	language  string
 	flip      bool
+	backlight float32 // 0 = off
+	led       float32
 	presses   int
 	pings     int
 	pongs     int
@@ -67,6 +71,8 @@ func newFakeDevice(t *testing.T) *fakeDevice {
 		apiMajor:  1,
 		status:    "offline",
 		language:  "en",
+		backlight: 1,
+		led:       60,
 		connected: make(chan struct{}),
 	}
 	t.Cleanup(func() {
@@ -165,15 +171,34 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 		d.send(&pb.ListEntitiesSwitchResponse{ObjectId: "flip_display", Key: keyFlip, Name: "Flip display"})
 		d.send(&pb.ListEntitiesEventResponse{ObjectId: "doorbell", Key: keyDoorbell, Name: "Doorbell", EventTypes: []string{"ring"}})
 		d.send(&pb.ListEntitiesButtonResponse{ObjectId: "ring_doorbell", Key: keyRing, Name: "Ring doorbell"})
+		d.send(&pb.ListEntitiesLightResponse{ObjectId: "display_backlight", Key: keyBacklight, Name: "Display backlight"})
+		d.send(&pb.ListEntitiesNumberResponse{ObjectId: "led_brightness", Key: keyLED, Name: "LED brightness", MinValue: 5, MaxValue: 100, Step: 5})
 		d.send(&pb.ListEntitiesSensorResponse{ObjectId: "other", Key: 999, Name: "Other"}) // not handled
 		d.send(&pb.ListEntitiesDoneResponse{})
 	case *pb.SubscribeStatesRequest:
 		d.mu.Lock()
-		status, language, flip := d.status, d.language, d.flip
+		status, language, flip, bl, led := d.status, d.language, d.flip, d.backlight, d.led
 		d.mu.Unlock()
 		d.send(&pb.SelectStateResponse{Key: keyStatus, State: status})
 		d.send(&pb.SelectStateResponse{Key: keyLanguage, State: language})
 		d.send(&pb.SwitchStateResponse{Key: keyFlip, State: flip})
+		d.send(&pb.LightStateResponse{Key: keyBacklight, State: bl > 0, Brightness: bl})
+		d.send(&pb.NumberStateResponse{Key: keyLED, State: led})
+	case *pb.LightCommandRequest:
+		d.mu.Lock()
+		if !m.GetState() {
+			d.backlight = 0
+		} else if m.GetHasBrightness() {
+			d.backlight = m.GetBrightness()
+		}
+		bl := d.backlight
+		d.mu.Unlock()
+		d.send(&pb.LightStateResponse{Key: keyBacklight, State: bl > 0, Brightness: bl})
+	case *pb.NumberCommandRequest:
+		d.mu.Lock()
+		d.led = m.GetState()
+		d.mu.Unlock()
+		d.send(&pb.NumberStateResponse{Key: keyLED, State: m.GetState()})
 	case *pb.SwitchCommandRequest:
 		if m.GetKey() == keyFlip {
 			d.mu.Lock()

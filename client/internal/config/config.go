@@ -26,12 +26,6 @@ type Config struct {
 	KeyPlain string `json:"key,omitempty"`
 	// Language of the tray and settings page; empty follows Windows.
 	Language string `json:"language,omitempty"`
-	// DisplayLanguage is set on the device's display_language select on
-	// connect; empty leaves the device as it is.
-	DisplayLanguage string `json:"display_language,omitempty"`
-	// DisplayFlip is set on the device's flip_display switch on connect:
-	// "on" (upside down), "off", or empty to leave the device as it is.
-	DisplayFlip string `json:"display_flip,omitempty"`
 	// PCName is reported for this PC; empty uses the computer name.
 	PCName string `json:"pc_name,omitempty"`
 	// SendAppNames reports which app uses the mic/camera.

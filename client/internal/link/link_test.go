@@ -266,65 +266,42 @@ func TestBackoff(t *testing.T) {
 	}
 }
 
-func TestOnConnectSetsDisplayLanguage(t *testing.T) {
+func TestOnConnectRunsBeforeReports(t *testing.T) {
 	d := &fakeDialer{}
 	c := newFakeConn()
 	d.push(c)
 	log := &stateLog{}
-	s := New(Options{Dial: d.dial, OnState: log.add, OnConnect: SetDisplayLanguage("it")})
+	var hooked []espapi.Entities
+	s := New(Options{Dial: d.dial, OnState: log.add, OnConnect: func(_ context.Context, _ Conn, ents espapi.Entities) error {
+		hooked = append(hooked, ents)
+		return errors.New("hook failures are only logged")
+	}})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { s.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
 	waitFor(t, "connection", func() bool { return log.last().Connected })
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.selects) != 1 || c.selects[0] != "9=it" {
-		t.Fatalf("selects %v", c.selects)
-	}
-
-	ents, _ := c.ListEntities(ctx)
-	if err := SetDisplayLanguage("de")(ctx, c, ents); err == nil {
-		t.Error("unknown language accepted")
-	}
-	if err := SetDisplayLanguage("")(ctx, c, ents); err != nil {
-		t.Errorf("empty language: %v", err)
+	if len(hooked) != 1 || len(hooked[0]) == 0 {
+		t.Fatalf("hook calls %v", hooked)
 	}
 }
 
-func TestDisplayFlipAndDoorbellHooks(t *testing.T) {
+func TestWatchDoorbell(t *testing.T) {
 	ctx := context.Background()
 	c := newFakeConn()
 	ents, _ := c.ListEntities(ctx)
 	rings := 0
-	hook := Hooks(SetDisplayFlip("on"), nil, SetDisplayFlip(""), WatchDoorbell(func() { rings++ }))
-	if err := hook(ctx, c, ents); err != nil {
+	if err := WatchDoorbell(func() { rings++ })(ctx, c, ents); err != nil {
 		t.Fatal(err)
 	}
-	c.mu.Lock()
-	if len(c.switches) != 1 || c.switches[0] != "11=true" {
-		t.Errorf("switches %v, want only 11=true", c.switches)
-	}
-	c.mu.Unlock()
 	c.emit(espapi.State{Key: 9, Value: "it"})    // another entity
 	c.emit(espapi.State{Key: 12, Value: "ring"}) // the doorbell
 	c.emit(espapi.State{Key: 12, Value: "other"})
 	if rings != 1 {
 		t.Errorf("%d rings, want 1", rings)
 	}
-
-	// A device without display or doorbell is left alone.
-	var bare espapi.Entities
-	if err := Hooks(SetDisplayFlip("off"), WatchDoorbell(func() {}))(ctx, c, bare); err != nil {
-		t.Errorf("bare device: %v", err)
-	}
-	// Errors are joined, and later hooks still run.
-	calls := 0
-	err := Hooks(
-		func(context.Context, Conn, espapi.Entities) error { return errors.New("first") },
-		func(context.Context, Conn, espapi.Entities) error { calls++; return nil },
-	)(ctx, c, ents)
-	if err == nil || calls != 1 {
-		t.Errorf("err %v, calls %d", err, calls)
+	// A device without a doorbell is left alone.
+	if err := WatchDoorbell(func() {})(ctx, c, nil); err != nil {
+		t.Errorf("no doorbell: %v", err)
 	}
 }

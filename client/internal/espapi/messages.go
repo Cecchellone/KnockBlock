@@ -29,13 +29,19 @@ var handledMessages = []proto.Message{
 	(*pb.ListEntitiesServicesResponse)(nil),
 	(*pb.ListEntitiesSwitchResponse)(nil),
 	(*pb.ListEntitiesEventResponse)(nil),
+	(*pb.ListEntitiesLightResponse)(nil),
+	(*pb.ListEntitiesNumberResponse)(nil),
 	(*pb.SubscribeStatesRequest)(nil),
 	(*pb.SelectStateResponse)(nil),
 	(*pb.TextSensorStateResponse)(nil),
 	(*pb.SwitchStateResponse)(nil),
 	(*pb.EventResponse)(nil),
+	(*pb.LightStateResponse)(nil),
+	(*pb.NumberStateResponse)(nil),
 	(*pb.SelectCommandRequest)(nil),
 	(*pb.SwitchCommandRequest)(nil),
+	(*pb.LightCommandRequest)(nil),
+	(*pb.NumberCommandRequest)(nil),
 	(*pb.ButtonCommandRequest)(nil),
 	(*pb.ExecuteServiceRequest)(nil),
 }
@@ -86,6 +92,8 @@ const (
 	KindSwitch
 	// KindEvent fires events (e.g. a doorbell ring); it has no state.
 	KindEvent
+	KindLight
+	KindNumber
 )
 
 func (k EntityKind) String() string {
@@ -102,6 +110,10 @@ func (k EntityKind) String() string {
 		return "switch"
 	case KindEvent:
 		return "event"
+	case KindLight:
+		return "light"
+	case KindNumber:
+		return "number"
 	default:
 		return fmt.Sprintf("EntityKind(%d)", int(k))
 	}
@@ -114,8 +126,10 @@ type Entity struct {
 	Key      uint32
 	ObjectID string
 	Name     string
-	Options  []string    // select options; event types for events
-	Args     []ActionArg // action arguments, in call order
+	Options  []string // select options; event types for events
+	// Min, Max and Step bound a number entity.
+	Min, Max, Step float64
+	Args           []ActionArg // action arguments, in call order
 }
 
 // ActionArg is one argument of an action.
@@ -141,9 +155,12 @@ func (e Entities) Find(kind EntityKind, objectID string) (Entity, bool) {
 // an event that fired.
 type State struct {
 	Key uint32
-	// Value is the option or text, "on" or "off" for a switch, and the event
-	// type for an event.
+	// Value is the option or text, "on" or "off" for a switch or a light,
+	// and the event type for an event.
 	Value string
+	// Number is the value of a number entity, or a light's brightness
+	// (0 to 1).
+	Number float64
 	// Missing is true when the entity has no valid state yet.
 	Missing bool
 }
@@ -160,6 +177,11 @@ func entityFromMessage(m proto.Message) (Entity, bool) {
 		e = Entity{Kind: KindTextSensor, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
 	case *pb.ListEntitiesSwitchResponse:
 		e = Entity{Kind: KindSwitch, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
+	case *pb.ListEntitiesLightResponse:
+		e = Entity{Kind: KindLight, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName()}
+	case *pb.ListEntitiesNumberResponse:
+		e = Entity{Kind: KindNumber, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName(),
+			Min: float64(r.GetMinValue()), Max: float64(r.GetMaxValue()), Step: float64(r.GetStep())}
 	case *pb.ListEntitiesEventResponse:
 		e = Entity{Kind: KindEvent, Key: r.GetKey(), ObjectID: r.GetObjectId(), Name: r.GetName(), Options: r.GetEventTypes()}
 	case *pb.ListEntitiesServicesResponse:

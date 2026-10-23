@@ -110,8 +110,8 @@ func TestListEntities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ents) != 8 {
-		t.Fatalf("got %d entities, want 8 (sensor skipped): %+v", len(ents), ents)
+	if len(ents) != 10 {
+		t.Fatalf("got %d entities, want 10 (sensor skipped): %+v", len(ents), ents)
 	}
 	tests := []struct {
 		kind     EntityKind
@@ -126,6 +126,8 @@ func TestListEntities(t *testing.T) {
 		{KindSwitch, "flip_display", keyFlip},
 		{KindEvent, "doorbell", keyDoorbell},
 		{KindButton, "ring_doorbell", keyRing},
+		{KindLight, "display_backlight", keyBacklight},
+		{KindNumber, "led_brightness", keyLED},
 	}
 	for _, tt := range tests {
 		e, ok := ents.Find(tt.kind, tt.objectID)
@@ -166,6 +168,19 @@ func TestStatesAndCommands(t *testing.T) {
 	expect(keyStatus, "offline")
 	expect(keyLanguage, "en")
 	expect(keyFlip, "off")
+	expectNumber := func(key uint32, value string, n float64) {
+		t.Helper()
+		select {
+		case s := <-states:
+			if s.Key != key || s.Value != value || s.Number != n {
+				t.Fatalf("state %+v, want key %d = %q %v", s, key, value, n)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no state for key %d", key)
+		}
+	}
+	expectNumber(keyBacklight, "on", 1)
+	expectNumber(keyLED, "", 60)
 
 	ctx := context.Background()
 	if err := c.SetSelect(ctx, keyStatus, "call"); err != nil {
@@ -189,6 +204,12 @@ func TestStatesAndCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(keyDoorbell, "ring")
+	mustOK(t, c.SetLight(ctx, keyBacklight, true, 0.5))
+	expectNumber(keyBacklight, "on", 0.5)
+	mustOK(t, c.SetLight(ctx, keyBacklight, false, 0))
+	expectNumber(keyBacklight, "off", 0)
+	mustOK(t, c.SetNumber(ctx, keyLED, 35))
+	expectNumber(keyLED, "", 35)
 	if status, language, _, _, _ := d.snapshot(); status != "call" || language != "it" {
 		t.Fatalf("device state %q %q", status, language)
 	}
@@ -315,5 +336,12 @@ func TestExecuteAction(t *testing.T) {
 		if err := c.ExecuteAction(ctx, tt.entity, tt.values); err == nil {
 			t.Errorf("%s: no error", tt.name)
 		}
+	}
+}
+
+func mustOK(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
