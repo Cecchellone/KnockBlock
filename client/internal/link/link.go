@@ -129,7 +129,14 @@ func (s *Supervisor) Run(ctx context.Context) {
 			if needsConfig {
 				delay = s.opts.MaxBackoff
 			}
-			s.log.Debug("connection failed", "err", err, "retry_in", delay)
+			// The first failure in a row goes to the log file, so a long
+			// outage can be told apart from a quiet light; retries stay at
+			// debug level.
+			if failures == 1 {
+				s.log.Warn("connection failed", "err", err, "retry_in", delay)
+			} else {
+				s.log.Debug("connection failed", "err", err, "retry_in", delay)
+			}
 			if !s.wait(ctx, delay) {
 				return
 			}
