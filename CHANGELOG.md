@@ -38,6 +38,8 @@ changes per minor version.
 
 ### PC app (Windows)
 
+- The settings window has no Save or Cancel: every change is saved at
+  once (a text field when you leave it), on the light too.
 - The webcam is detected again. Recent Windows 11 builds stopped recording
   camera use where the app looked; the app now asks Windows' camera service
   which programs are streaming. A webcam used through NVIDIA Broadcast's
