@@ -119,9 +119,10 @@ const (
 	emSetLimitText   = 0x00C5
 	emSetCueBanner   = 0x1501
 
-	bnClicked = 0
-	idOK      = 1
-	idCancel  = 2
+	bnClicked    = 0
+	cbnSelChange = 1
+	enKillFocus  = 0x0200
+	idCancel     = 2
 
 	swShow        = 5
 	swRestore     = 9

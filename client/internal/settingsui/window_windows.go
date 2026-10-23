@@ -116,17 +116,17 @@ func (w *Window) Capture(out io.Writer) (controls int, err error) {
 
 // Window IDs of the controls that send commands.
 const (
-	idSave = idOK
 	idTest = 100
 	idTabs = 101
 )
 
 // Messages to the window thread: the connection test finished; the light's
-// settings were read (or could not be).
+// settings were read (or could not be); the light's settings were written.
 const (
 	wmTestDone    = wmApp + 1
 	wmDeviceReady = wmApp + 2
 	wmSelectTab   = wmApp + 3
+	wmDeviceSaved = wmApp + 4
 )
 
 // box is a control's place in 96-DPI client coordinates.
@@ -171,15 +171,18 @@ type win struct {
 	pcName, lang                                windows.HWND
 	sendApps, doorbell, notify, autostart       windows.HWND
 	ignore, names                               windows.HWND
+	saveStatus                                  windows.HWND
 	langChoices, devLangChoices, flipChoices    []Choice
 	notifyChoices                               []Choice
 	cancelTest, cancelDevice                    context.CancelFunc
 	device                                      *Device // nil until read, or if unreachable
+	lastSaved                                   Form    // the form as last saved, to skip saving it again
 
 	mu        sync.Mutex
 	testMsg   string
 	devResult *Device
 	devErr    error
+	devSaved  error // outcome of the last write of the light's settings
 	closed    bool
 }
 
@@ -252,7 +255,7 @@ func (c *win) run() {
 			c.showPage((c.page + step) % Tabs)
 			continue
 		}
-		// Tab, Enter (Save) and Esc (Cancel) as in a dialog box.
+		// Tab and Esc (close) as in a dialog box.
 		if r, _, _ := procIsDialogMessageW.Call(uintptr(c.hwnd), uintptr(unsafe.Pointer(&m))); r != 0 {
 			continue
 		}
@@ -306,6 +309,7 @@ func (c *win) create() error {
 	c.setIcons()
 	c.build()
 	c.fill(c.model.Form())
+	c.lastSaved = c.form()
 	c.openDevice()
 	c.layout()
 	c.center()
@@ -414,10 +418,11 @@ func (c *win) build() {
 	c.names = c.add("EDIT", "", multi, wsExClientEdge, 0, box{x, 204, iw, 76})
 	label(t("settings.names_help"), box{x, 284, iw, 32})
 
-	// Buttons.
+	// No Save or Cancel: every change is saved at once (a text field when
+	// it loses the focus). The line at the bottom says so, or why a change
+	// was not saved.
 	c.building = -1
-	c.add("BUTTON", t("settings.save"), wsTabStop|bsDefPushButton, 0, idSave, box{clientW - 12 - 208, 394, 100, 26})
-	c.add("BUTTON", t("settings.cancel"), wsTabStop|bsPushButton, 0, idCancel, box{clientW - 12 - 100, 394, 100, 26})
+	c.saveStatus = label(t("settings.autosave"), box{x, 398, iw, 20})
 	c.showPage(pageConnection)
 }
 
@@ -564,7 +569,8 @@ func (c *win) sliderValue(sl Slider) int {
 }
 
 // slid handles WM_HSCROLL from a slider: the value shows next to it and on
-// the light at once (Device.Preview); Save keeps it, closing undoes it.
+// the light at once (Device.Preview), and is saved when the slider is let
+// go.
 func (c *win) slid(bar windows.HWND, code uintptr) {
 	sl := SliderBacklight
 	if bar == c.devLED {
@@ -575,12 +581,15 @@ func (c *win) slid(bar windows.HWND, code uintptr) {
 	v := c.sliderValue(sl)
 	_, value := c.sliderHandle(sl)
 	setText(value, c.model.SliderLabel(sl, v))
+	if c.device == nil {
+		return
+	}
 	if code == tbEndTrack {
 		sendMessage(bar, tbmSetPos, 1, uintptr(v)) // onto the step
+		c.saveDevice()
+		return
 	}
-	if c.device != nil {
-		c.device.Preview(sl, v)
-	}
+	c.device.Preview(sl, v)
 }
 
 // add creates a child control; layout places it.
@@ -699,12 +708,20 @@ func setCheck(h windows.HWND, on bool) {
 
 func isChecked(h windows.HWND) bool { return sendMessage(h, bmGetCheck, 0, 0) == 1 }
 
-func (c *win) save() {
-	err := c.model.Save(c.form())
+// save writes the form if it changed since the last save. A field that is
+// not valid is reported on the bottom line; with focus true (the window is
+// closing) it is also selected, so it can be fixed. It reports whether the
+// form is saved.
+func (c *win) save(focus bool) bool {
+	f := c.form()
+	if f == c.lastSaved {
+		return true
+	}
+	err := c.model.Save(f)
 	if err != nil {
-		c.message(c.model.SaveError(err))
+		setText(c.saveStatus, c.model.SaveError(err))
 		var fe *FieldError
-		if errors.As(err, &fe) {
+		if focus && errors.As(err, &fe) {
 			field := map[Field]windows.HWND{FieldHost: c.host, FieldPort: c.port, FieldKey: c.key, FieldNames: c.names}[fe.Field]
 			page := map[Field]int{FieldHost: pageConnection, FieldPort: pageConnection, FieldKey: pageConnection, FieldNames: pageApps}[fe.Field]
 			if field != 0 {
@@ -713,16 +730,88 @@ func (c *win) save() {
 				sendMessage(field, emSetSel, 0, ^uintptr(0))
 			}
 		}
+		return false
+	}
+	if f.Key != "" || f.RemoveKey {
+		// The key is stored (or removed): the field empties, as when the
+		// window opens.
+		setText(c.key, "")
+		setCheck(c.removeKey, false)
+		cue := ""
+		if c.model.KeySaved() {
+			cue = c.model.T("settings.key_saved")
+		}
+		sendMessage(c.key, emSetCueBanner, 0, uintptr(unsafe.Pointer(utf16Ptr(cue))))
+		enableWindow(c.removeKey, c.model.KeySaved())
+		f.Key, f.RemoveKey = "", false
+	}
+	c.lastSaved = f
+	setText(c.saveStatus, c.model.T("settings.saved"))
+	return true
+}
+
+// saveDevice writes the light's settings on another goroutine: the light
+// may take a moment to answer. wmDeviceSaved reports the outcome.
+func (c *win) saveDevice() {
+	if c.device == nil {
 		return
 	}
-	if c.device != nil {
-		if err := c.device.Apply(context.Background(), c.deviceForm()); err != nil {
-			c.message(c.model.DeviceError(err))
-			c.showPage(pageLight)
-			return
+	d, s, hwnd := c.device, c.deviceForm(), c.hwnd
+	go func() {
+		err := d.Apply(context.Background(), s)
+		c.mu.Lock()
+		closed := c.closed
+		c.devSaved = err
+		c.mu.Unlock()
+		if !closed {
+			postMessage(hwnd, wmDeviceSaved, 0, 0)
+		}
+	}()
+}
+
+func (c *win) deviceSaved() {
+	c.mu.Lock()
+	err := c.devSaved
+	c.mu.Unlock()
+	if err != nil {
+		setText(c.saveStatus, c.model.DeviceError(err))
+		return
+	}
+	setText(c.saveStatus, c.model.T("settings.saved"))
+}
+
+// changed saves after a control changed: ctl sent the notification code.
+func (c *win) changed(ctl windows.HWND, code uintptr) {
+	switch ctl {
+	case c.devLang, c.devFlip:
+		if code == cbnSelChange {
+			c.saveDevice()
+		}
+	case c.devPrivacy:
+		if code == bnClicked {
+			c.saveDevice()
+		}
+	case c.lang, c.notify:
+		if code == cbnSelChange {
+			c.save(false)
+		}
+	case c.sendApps, c.doorbell, c.autostart, c.removeKey:
+		if code == bnClicked {
+			c.save(false)
+		}
+	case c.host, c.port, c.key, c.pcName, c.ignore, c.names:
+		if code == enKillFocus {
+			c.save(false)
 		}
 	}
-	procDestroyWindow.Call(uintptr(c.hwnd))
+}
+
+// close saves what is still being typed and closes the window, unless
+// that is not valid: then the field is shown to be fixed.
+func (c *win) close() {
+	if c.save(true) {
+		procDestroyWindow.Call(uintptr(c.hwnd))
+	}
 }
 
 func (c *win) message(text string) {
@@ -783,9 +872,8 @@ func (c *win) destroyed() {
 		c.cancelDevice()
 	}
 	if c.device != nil {
-		// Closed without saving: put back what the sliders previewed (after
-		// Save there is nothing to put back). Off the window thread: it may
-		// wait for the light.
+		// Put back a slider previewed but not let go (every change let go
+		// is saved). Off the window thread: it may wait for the light.
 		go func(d *Device) {
 			d.Revert(context.Background())
 			d.Close()
@@ -822,15 +910,14 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 		switch m {
 		case wmCommand:
 			switch id, code := wParam&0xffff, (wParam>>16)&0xffff; {
-			case id == idSave:
-				c.save()
-				return 0
-			case id == idCancel:
-				procDestroyWindow.Call(uintptr(hwnd))
+			case id == idCancel: // Esc
+				c.close()
 				return 0
 			case id == idTest && code == bnClicked:
 				c.startTest()
 				return 0
+			case lParam != 0:
+				c.changed(windows.HWND(lParam), code)
 			}
 		case wmHScroll:
 			c.slid(windows.HWND(lParam), wParam&0xffff)
@@ -847,6 +934,9 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 		case wmDeviceReady:
 			c.deviceReady()
 			return 0
+		case wmDeviceSaved:
+			c.deviceSaved()
+			return 0
 		case wmSelectTab:
 			c.showPage(int(wParam) % Tabs)
 			return 0
@@ -861,7 +951,7 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 			c.dpiChanged(uint32(wParam & 0xffff))
 			return 0
 		case wmClose:
-			procDestroyWindow.Call(uintptr(hwnd))
+			c.close()
 			return 0
 		case wmDestroy:
 			c.destroyed()
