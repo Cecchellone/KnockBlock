@@ -18,6 +18,7 @@ type fakeConn struct {
 	err      error
 	closed   bool
 	reports  [][3]string
+	selects  []string
 	noAction bool
 }
 
@@ -27,7 +28,10 @@ func (c *fakeConn) ListEntities(context.Context) (espapi.Entities, error) {
 	if c.noAction {
 		return espapi.Entities{{Kind: espapi.KindSelect, ObjectID: "status"}}, nil
 	}
-	return espapi.Entities{{Kind: espapi.KindAction, ObjectID: "report_presence", Key: 7}}, nil
+	return espapi.Entities{
+		{Kind: espapi.KindAction, ObjectID: "report_presence", Key: 7},
+		{Kind: espapi.KindSelect, ObjectID: "display_language", Key: 9, Options: []string{"en", "it"}},
+	}, nil
 }
 
 func (c *fakeConn) ExecuteAction(_ context.Context, a espapi.Entity, v map[string]string) error {
@@ -40,6 +44,13 @@ func (c *fakeConn) ExecuteAction(_ context.Context, a espapi.Entity, v map[strin
 		return fmt.Errorf("wrong action %+v", a)
 	}
 	c.reports = append(c.reports, [3]string{v["pc"], v["status"], v["app"]})
+	return nil
+}
+
+func (c *fakeConn) SetSelect(_ context.Context, key uint32, option string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.selects = append(c.selects, fmt.Sprintf("%d=%s", key, option))
 	return nil
 }
 
@@ -224,5 +235,31 @@ func TestBackoff(t *testing.T) {
 				t.Fatalf("backoff(%d) = %v, want in [%v, %v]", n, d, max/2, max)
 			}
 		}
+	}
+}
+
+func TestOnConnectSetsDisplayLanguage(t *testing.T) {
+	d := &fakeDialer{}
+	c := newFakeConn()
+	d.push(c)
+	log := &stateLog{}
+	s := New(Options{Dial: d.dial, OnState: log.add, OnConnect: SetDisplayLanguage("it")})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	waitFor(t, "connection", func() bool { return log.last().Connected })
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.selects) != 1 || c.selects[0] != "9=it" {
+		t.Fatalf("selects %v", c.selects)
+	}
+
+	ents, _ := c.ListEntities(ctx)
+	if err := SetDisplayLanguage("de")(ctx, c, ents); err == nil {
+		t.Error("unknown language accepted")
+	}
+	if err := SetDisplayLanguage("")(ctx, c, ents); err != nil {
+		t.Errorf("empty language: %v", err)
 	}
 }

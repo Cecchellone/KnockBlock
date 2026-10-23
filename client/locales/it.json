@@ -1,0 +1,32 @@
+{
+  "app.name": "KnockBlock",
+
+  "status.free": "Libero",
+  "status.mic": "Microfono acceso",
+  "status.camera": "Webcam accesa",
+  "status.call": "In chiamata",
+  "status.dnd": "Non disturbare",
+  "status.offline": "Non connesso",
+  "status.with_app": "{status} ({app})",
+
+  "conn.connected": "Connesso a {device}",
+  "conn.connecting": "Connessione a {device}…",
+  "conn.unreachable": "{device} non raggiungibile, nuovo tentativo in corso",
+  "conn.bad_key": "Chiave di cifratura errata o mancante per {device}",
+  "conn.old_firmware": "{device} ha bisogno di un aggiornamento del firmware",
+  "conn.not_configured": "Nessun dispositivo configurato",
+
+  "menu.status": "Stato: {status}",
+  "menu.auto": "Automatico",
+  "menu.free": "Libero",
+  "menu.dnd": "Non disturbare",
+  "menu.settings": "Impostazioni…",
+  "menu.autostart": "Avvia con Windows",
+  "menu.quit": "Esci",
+
+  "tooltip": "KnockBlock: {status}\n{connection}",
+
+  "notify.unreachable": "La luce non è raggiungibile da {minutes} minuti.",
+  "notify.bad_key": "La luce ha rifiutato la chiave di cifratura. Controllala nelle impostazioni.",
+  "notify.old_firmware": "Il firmware della luce è troppo vecchio per questa app. Aggiornalo con ESPHome."
+}

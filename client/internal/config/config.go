@@ -1,0 +1,146 @@
+package config
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+)
+
+// Config is the app configuration, stored as JSON in
+// %APPDATA%\KnockBlock\config.json.
+type Config struct {
+	// Host is the device address (default knockblock.local) and Port its
+	// Native API port (default 6053).
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	// KeyProtected is the API encryption key, encrypted for the current
+	// Windows user with DPAPI, base64. Use Key and SetKey. Never logged.
+	KeyProtected string `json:"key_protected,omitempty"`
+	// Language of the tray and settings page; empty follows Windows.
+	Language string `json:"language,omitempty"`
+	// DisplayLanguage is set on the device's display_language select on
+	// connect; empty leaves the device as it is.
+	DisplayLanguage string `json:"display_language,omitempty"`
+	// PCName is reported for this PC; empty uses the computer name.
+	PCName string `json:"pc_name,omitempty"`
+	// SendAppNames reports which app uses the mic/camera.
+	SendAppNames bool `json:"send_app_names"`
+	// Notifications enables notifications for problems that last.
+	Notifications bool `json:"notifications"`
+	// Ignore lists executables or Store packages not to report.
+	Ignore []string `json:"ignore,omitempty"`
+	// AppNames maps executables or packages to the names shown.
+	AppNames map[string]string `json:"app_names,omitempty"`
+}
+
+// Defaults.
+const (
+	DefaultHost = "knockblock.local"
+	DefaultPort = 6053
+)
+
+// Default returns the configuration of a fresh install.
+func Default() Config {
+	return Config{Host: DefaultHost, Port: DefaultPort, SendAppNames: true, Notifications: true}
+}
+
+// Path returns %APPDATA%\KnockBlock\config.json (the user config directory
+// on other systems).
+func Path() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("config: %w", err)
+	}
+	return filepath.Join(dir, "KnockBlock", "config.json"), nil
+}
+
+// Load reads the configuration; a missing file gives the defaults. Fields
+// missing from the file keep their defaults.
+func Load(path string) (Config, error) {
+	c := Default()
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return c, nil
+	}
+	if err != nil {
+		return c, fmt.Errorf("config: %w", err)
+	}
+	if err := json.Unmarshal(data, &c); err != nil {
+		return Default(), fmt.Errorf("config: %s: %w", path, err)
+	}
+	if c.Host == "" {
+		c.Host = DefaultHost
+	}
+	if c.Port <= 0 || c.Port > 65535 {
+		c.Port = DefaultPort
+	}
+	return c, nil
+}
+
+// Save writes the configuration atomically (temporary file, then rename),
+// readable only by the user.
+func Save(path string, c Config) error {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "config-*.json")
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return fmt.Errorf("config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	return nil
+}
+
+// Address returns host:port for espapi.Options.Address.
+func (c Config) Address() string {
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
+}
+
+// Key returns the API encryption key, or "" if none is set.
+func (c Config) Key() (string, error) {
+	if c.KeyProtected == "" {
+		return "", nil
+	}
+	blob, err := base64.StdEncoding.DecodeString(c.KeyProtected)
+	if err != nil {
+		return "", fmt.Errorf("config: stored key is corrupt: %w", err)
+	}
+	key, err := unprotect(blob)
+	if err != nil {
+		return "", fmt.Errorf("config: cannot decrypt the stored key (was it saved by another Windows user?): %w", err)
+	}
+	return string(key), nil
+}
+
+// SetKey stores the API encryption key; "" removes it.
+func (c *Config) SetKey(key string) error {
+	if key == "" {
+		c.KeyProtected = ""
+		return nil
+	}
+	blob, err := protect([]byte(key))
+	if err != nil {
+		return fmt.Errorf("config: protecting the key: %w", err)
+	}
+	c.KeyProtected = base64.StdEncoding.EncodeToString(blob)
+	return nil
+}

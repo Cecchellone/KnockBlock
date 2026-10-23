@@ -83,6 +83,9 @@ These three requirements drive every design decision. If a change conflicts with
   internal/settingsui/          # on-demand localhost settings page (html/template, embedded assets)
   internal/tray/                # tray icon, menu, icons per status
   internal/memdebug/            # periodic memory statistics (debug flag, §2.1)
+  internal/logfile/             # size-rotated log file (logs never kept in memory)
+  internal/sysevents/           # resume-from-sleep and network-change notifications (Windows)
+  internal/autostart/           # "Start with Windows" (HKCU Run value)
   internal/icon/                # draws the app/tray icon (door + status light) and encodes .ico; no image files in the repo
   locales/                      # en.json, it.json (embedded with go:embed)
 /installer/

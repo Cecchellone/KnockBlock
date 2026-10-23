@@ -20,6 +20,7 @@ import (
 type Conn interface {
 	ListEntities(ctx context.Context) (espapi.Entities, error)
 	ExecuteAction(ctx context.Context, action espapi.Entity, values map[string]string) error
+	SetSelect(ctx context.Context, key uint32, option string) error
 	Done() <-chan struct{}
 	Err() error
 	Close() error
@@ -67,7 +68,11 @@ type Options struct {
 	// OnState is called on every state change, from Run's goroutine. It
 	// must not block.
 	OnState func(State)
-	Logger  *slog.Logger
+	// OnConnect, if set, runs after every successful connection, before
+	// reports are sent over it (e.g. to set the display language). Errors
+	// are logged, not fatal.
+	OnConnect func(ctx context.Context, c Conn, ents espapi.Entities) error
+	Logger    *slog.Logger
 }
 
 // Supervisor owns the connection. Run it in a goroutine; Report and
@@ -103,7 +108,7 @@ func New(opts Options) *Supervisor {
 func (s *Supervisor) Run(ctx context.Context) {
 	failures := 0
 	for {
-		conn, action, err := s.connect(ctx)
+		conn, action, ents, err := s.connect(ctx)
 		if ctx.Err() != nil {
 			if conn != nil {
 				conn.Close()
@@ -126,6 +131,13 @@ func (s *Supervisor) Run(ctx context.Context) {
 		}
 
 		failures = 0
+		if s.opts.OnConnect != nil {
+			octx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := s.opts.OnConnect(octx, conn, ents); err != nil {
+				s.log.Warn("on-connect setup failed", "err", err)
+			}
+			cancel()
+		}
 		s.mu.Lock()
 		s.conn, s.action = conn, action
 		s.gen++
@@ -159,24 +171,44 @@ func (s *Supervisor) Run(ctx context.Context) {
 }
 
 // connect dials and finds the report_presence action.
-func (s *Supervisor) connect(ctx context.Context) (Conn, espapi.Entity, error) {
+func (s *Supervisor) connect(ctx context.Context) (Conn, espapi.Entity, espapi.Entities, error) {
 	conn, err := s.opts.Dial(ctx)
 	if err != nil {
-		return nil, espapi.Entity{}, err
+		return nil, espapi.Entity{}, nil, err
 	}
 	lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ents, err := conn.ListEntities(lctx)
 	if err != nil {
 		conn.Close()
-		return nil, espapi.Entity{}, fmt.Errorf("link: listing entities: %w", err)
+		return nil, espapi.Entity{}, nil, fmt.Errorf("link: listing entities: %w", err)
 	}
 	action, ok := ents.Find(espapi.KindAction, "report_presence")
 	if !ok {
 		conn.Close()
-		return nil, espapi.Entity{}, ErrNoPresenceAction
+		return nil, espapi.Entity{}, nil, ErrNoPresenceAction
 	}
-	return conn, action, nil
+	return conn, action, ents, nil
+}
+
+// SetDisplayLanguage returns an OnConnect hook that sets the device's
+// display_language select, when lang is not empty and the device offers it.
+func SetDisplayLanguage(lang string) func(context.Context, Conn, espapi.Entities) error {
+	return func(ctx context.Context, c Conn, ents espapi.Entities) error {
+		if lang == "" {
+			return nil
+		}
+		sel, ok := ents.Find(espapi.KindSelect, "display_language")
+		if !ok {
+			return nil
+		}
+		for _, o := range sel.Options {
+			if o == lang {
+				return c.SetSelect(ctx, sel.Key, lang)
+			}
+		}
+		return fmt.Errorf("link: device has no display language %q (has %v)", lang, sel.Options)
+	}
 }
 
 // Report sends this PC's presence over the current connection. It returns

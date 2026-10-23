@@ -1,0 +1,32 @@
+{
+  "app.name": "KnockBlock",
+
+  "status.free": "Free",
+  "status.mic": "Microphone on",
+  "status.camera": "Camera on",
+  "status.call": "In a call",
+  "status.dnd": "Do not disturb",
+  "status.offline": "Offline",
+  "status.with_app": "{status} ({app})",
+
+  "conn.connected": "Connected to {device}",
+  "conn.connecting": "Connecting to {device}…",
+  "conn.unreachable": "{device} unreachable, retrying",
+  "conn.bad_key": "Wrong or missing encryption key for {device}",
+  "conn.old_firmware": "{device} needs a firmware update",
+  "conn.not_configured": "No device configured",
+
+  "menu.status": "Status: {status}",
+  "menu.auto": "Automatic",
+  "menu.free": "Free",
+  "menu.dnd": "Do not disturb",
+  "menu.settings": "Settings…",
+  "menu.autostart": "Start with Windows",
+  "menu.quit": "Quit",
+
+  "tooltip": "KnockBlock: {status}\n{connection}",
+
+  "notify.unreachable": "The light has been unreachable for {minutes} minutes.",
+  "notify.bad_key": "The light rejected the encryption key. Check it in the settings.",
+  "notify.old_firmware": "The light's firmware is too old for this app. Update it with ESPHome."
+}

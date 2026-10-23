@@ -60,6 +60,15 @@ Each [release](https://github.com/Cecchellone/KnockBlock/releases) has:
 
 Details are in [`docs/release-notes.md`](docs/release-notes.md). Build them locally with `scripts/build-msi.sh` (needs `wixl` and `msitools`) and `scripts/build-firmware-bundle.sh` (needs ESPHome).
 
+### The tray app
+
+After installing the MSI, KnockBlock starts with Windows and sits in the notification area:
+
+- The **icon colour** follows this PC's status: green free, amber microphone, orange camera, red call, purple do not disturb. It is grey while the light is unreachable.
+- The **menu** shows the status and the connection. You can force "Free" or "Do not disturb" ("Automatic" goes back to detection), open the settings, toggle "Start with Windows", or quit.
+- The **settings** are stored in `%APPDATA%\KnockBlock\config.json`: device host, port, encryption key (encrypted with Windows DPAPI), languages, PC name, ignored apps, custom app names, notifications. The app reloads them as soon as they are saved.
+- **Logs** go to `%LOCALAPPDATA%\KnockBlock\logs\knockblock.log`. Run `knockblock.exe -debug -debug-mem 30s` to log details and memory use.
+
 ### Trying the PC side without the tray app
 
 `knockctl` (a development tool, built by CI as `knockctl.exe`) runs the same presence loop as the tray app:
