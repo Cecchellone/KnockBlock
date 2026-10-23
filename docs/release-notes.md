@@ -18,6 +18,12 @@ connection**, then **Save**. You can reopen the window from the tray menu
 
 Uninstall from Settings → Apps.
 
+### `knockctl-<version>.exe`: command-line tool
+
+For trying the light from a terminal, without the tray app: `knockctl.exe
+-addr knockblock.local -key <api key> list`, `… ring`, `… agent`. See the
+README.
+
 ### `knockblock-<version>.esphomebundle.tar.gz`: device firmware
 
 The ESPHome configuration for the Waveshare ESP32-C6-LCD-1.47, with

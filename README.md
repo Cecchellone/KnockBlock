@@ -81,7 +81,7 @@ After installing the MSI, KnockBlock starts with Windows and sits in the notific
 
 ### Trying the PC side without the tray app
 
-`knockctl` (a development tool, built by CI as `knockctl.exe`) runs the same presence loop as the tray app:
+`knockctl` (a command-line tool, attached to every release as `knockctl-<version>.exe`) runs the same presence loop as the tray app:
 
 ```sh
 knockctl.exe -addr knockblock.local -key <api key> agent     # detect mic/camera use and report it until Ctrl-C
