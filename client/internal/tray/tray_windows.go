@@ -4,6 +4,7 @@ package tray
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"image"
 	"image/color"
@@ -11,8 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"fyne.io/systray"
 
@@ -373,11 +376,53 @@ func (a *app) announceUpdate() {
 
 // doorbell tells the user that someone rang the light's doorbell, with a
 // standard Windows notification (it can be turned off in the settings).
+// When the notification shows on screen and the light can show messages,
+// it has a reply box: what the user sends appears on the light.
 func (a *app) doorbell() {
 	a.log.Info("doorbell")
+	a.mu.Lock()
+	mode := a.cfg.Notify
+	a.mu.Unlock()
+	if (mode == config.NotifySilent || mode == config.NotifyFull) && a.engine.CanShowMessage() {
+		err := showReplyToast(replyToast{
+			Title: a.t("notify.doorbell_title"), Body: a.t("notify.doorbell"),
+			Placeholder: a.t("notify.doorbell_reply"), Send: a.t("notify.doorbell_send"),
+			Sound: mode == config.NotifyFull,
+		}, a.reply)
+		if err == nil {
+			return
+		}
+		a.log.Warn("doorbell toast not shown; showing a plain notification", "err", err)
+	}
 	if err := a.notify(a.t("notify.doorbell_title"), a.t("notify.doorbell")); err != nil {
 		a.log.Warn("doorbell notification not shown", "err", err)
 	}
+}
+
+// reply shows the answer typed in the doorbell notification on the light.
+func (a *app) reply(text string) {
+	text = truncateUTF8(strings.TrimSpace(text), maxReply)
+	if text == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := a.engine.ShowMessage(ctx, text); err != nil {
+		a.log.Warn("reply not shown on the light", "err", err)
+		return
+	}
+	a.log.Info("reply shown on the light")
+}
+
+// truncateUTF8 cuts s to at most n bytes without splitting a character.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // notify shows a notification as the settings say (none, silent, sound

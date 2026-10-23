@@ -13,6 +13,8 @@
 # - `show_doorbell` shows that the doorbell rang (display and LED on the
 #   board, a log line on the host). The `doorbell` event has already been
 #   sent to the PC apps and Home Assistant when it runs.
+# - `show_message` shows `message_text`, sent by `message_pc`, for
+#   ${message_duration_ms} ms (the board's display, a log line on the host).
 
 substitutions:
   # A source (a PC, or the manual source) that sends nothing for this long
@@ -22,6 +24,8 @@ substitutions:
   # Rings closer together than this count as one, so a held or bouncing
   # button does not flood the PCs with notifications.
   doorbell_cooldown_ms: "3000"
+  # How long a message from a PC (show_message) stays on the display.
+  message_duration_ms: "20000"
 
 knockblock_i18n:
   id: labels
@@ -44,6 +48,12 @@ globals:
   - id: last_ring_ms
     type: uint32_t
     initial_value: "0"
+
+  # The last message from a PC (show_message) and who sent it.
+  - id: message_text
+    type: std::string
+  - id: message_pc
+    type: std::string
 
 api:
   actions:
@@ -69,6 +79,22 @@ api:
         devices: string
       then:
         - lambda: 'id(presence).report(pc, status, app, devices);'
+
+    # A short message from a PC (e.g. the answer typed in the doorbell
+    # notification), shown on the display for ${message_duration_ms} ms.
+    # Longer messages are cut at 120 bytes, at a UTF-8 character boundary.
+    - action: show_message
+      variables:
+        pc: string
+        message: string
+      then:
+        - lambda: |-
+            size_t n = std::min<size_t>(message.size(), 120);
+            while (n > 0 && n < message.size() && (static_cast<uint8_t>(message[n]) & 0xC0) == 0x80)
+              n--;
+            id(message_text) = message.substr(0, n);
+            id(message_pc) = pc.substr(0, 32);
+        - script.execute: show_message
 
 select:
   # The combined status, as language-neutral IDs; the display label is

@@ -42,6 +42,7 @@ type Engine struct {
 
 type running struct {
 	address, key string
+	pc           string
 	det          detect.Detector
 	sup          *link.Supervisor
 	agent        *agent.Agent
@@ -81,7 +82,7 @@ func (e *Engine) Start(cfg config.Config) error {
 
 	e.mu.Lock()
 	if r := e.run; r != nil && r.address == cfg.Address() && r.key == key {
-		r.det = det
+		r.det, r.pc = det, pc
 		r.agent.Update(pc, cfg.SendAppNames, det)
 		e.mu.Unlock()
 		e.deps.Logger.Info("engine updated", "pc", pc)
@@ -114,7 +115,7 @@ func (e *Engine) Start(cfg config.Config) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	a.SetOverride(e.override)
-	r := &running{address: cfg.Address(), key: key, det: det, sup: sup, agent: a, agentDone: make(chan struct{}), supervisor: make(chan struct{})}
+	r := &running{address: cfg.Address(), key: key, pc: pc, det: det, sup: sup, agent: a, agentDone: make(chan struct{}), supervisor: make(chan struct{})}
 	supCtx, stopSup := context.WithCancel(context.Background())
 	agentCtx, stopAgent := context.WithCancel(context.Background())
 	r.stopSup, r.stopAgent = stopSup, stopAgent
@@ -157,6 +158,29 @@ func (e *Engine) Override() status.Override {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.override
+}
+
+// CanShowMessage reports whether the light is connected and can show a
+// message from this PC.
+func (e *Engine) CanShowMessage() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.run != nil && e.run.sup.CanShowMessage()
+}
+
+// ShowMessage shows a message from this PC on the light's display.
+func (e *Engine) ShowMessage(ctx context.Context, text string) error {
+	e.mu.Lock()
+	r := e.run
+	var pc string
+	if r != nil {
+		pc = r.pc
+	}
+	e.mu.Unlock()
+	if r == nil {
+		return link.ErrNotConnected
+	}
+	return r.sup.ShowMessage(ctx, pc, text)
 }
 
 // ForceReconnect reconnects at once (resume from sleep, network change).
