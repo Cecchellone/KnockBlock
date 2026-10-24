@@ -184,11 +184,20 @@ func (s *Supervisor) Run(ctx context.Context) {
 	}
 }
 
+// dialTimeout bounds one connection attempt (name resolution, TCP, the
+// Noise handshake and Hello).
+const dialTimeout = 20 * time.Second
+
 // connect dials and finds the action that reports presence:
 // report_activity, which also takes the devices in use, or report_presence
 // on firmware older than it.
 func (s *Supervisor) connect(ctx context.Context) (Conn, espapi.Entity, espapi.Entities, error) {
-	conn, err := s.opts.Dial(ctx)
+	// Every attempt has a time limit: an attempt that never finished (name
+	// resolution or a connection the network left half open) once kept the
+	// app off the light for hours.
+	dctx, cancelDial := context.WithTimeout(ctx, dialTimeout)
+	conn, err := s.opts.Dial(dctx)
+	cancelDial()
 	if err != nil {
 		return nil, espapi.Entity{}, nil, err
 	}
