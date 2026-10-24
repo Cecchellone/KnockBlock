@@ -26,7 +26,15 @@ bash (Join-Path $root "scripts/winres.sh") $Version
 if ($LASTEXITCODE -ne 0) { throw "winres.sh failed" }
 Push-Location (Join-Path $root "client")
 $env:GOOS = "windows"; $env:GOARCH = "amd64"; $env:CGO_ENABLED = "0"
-go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=$Version" -o (Join-Path $dist "knockblock.exe") ./cmd/knockblock
+# The Discord application of the Integrations tab (docs/discord.md), from
+# the environment (the release workflow's repository secrets); without it
+# the Discord integration says it is not available.
+$ldflags = "-s -w -H=windowsgui -X main.version=$Version"
+if ($env:DISCORD_CLIENT_ID -and $env:DISCORD_CLIENT_SECRET) {
+  $ldflags += " -X main.discordClientID=$($env:DISCORD_CLIENT_ID) -X main.discordClientSecret=$($env:DISCORD_CLIENT_SECRET)"
+  Write-Host "    with the Discord application"
+}
+go build -trimpath -ldflags $ldflags -o (Join-Path $dist "knockblock.exe") ./cmd/knockblock
 if ($LASTEXITCODE -ne 0) { throw "go build failed" }
 Pop-Location
 

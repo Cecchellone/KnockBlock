@@ -18,6 +18,7 @@ import (
 
 	"github.com/Cecchellone/KnockBlock/client/internal/autostart"
 	"github.com/Cecchellone/KnockBlock/client/internal/config"
+	"github.com/Cecchellone/KnockBlock/client/internal/discord"
 	"github.com/Cecchellone/KnockBlock/client/internal/i18n"
 	"github.com/Cecchellone/KnockBlock/client/internal/logfile"
 	"github.com/Cecchellone/KnockBlock/client/internal/memdebug"
@@ -76,6 +77,7 @@ func run(o options) error {
 	if err != nil {
 		return err
 	}
+	disc := newDiscord(cfgPath, log)
 	hostname, _ := os.Hostname()
 	settings := settingsui.NewWindow(settingsui.Deps{
 		ConfigPath:      cfgPath,
@@ -85,6 +87,7 @@ func run(o options) error {
 		Autostart:       autostartSetting{},
 		Logger:          log,
 		ClientInfo:      "KnockBlock " + version + " (settings)",
+		Discord:         disc,
 	})
 	defer settings.Close()
 	if o.settingsSmoke != "" {
@@ -95,6 +98,29 @@ func run(o options) error {
 		Version:      version,
 		Logger:       log,
 		OpenSettings: func(string) error { return settings.Open() },
+		Discord:      disc,
+	})
+}
+
+// The Discord application used for the Integrations tab, set at build time
+// from the repository's secrets (scripts/build-msi.ps1, docs/discord.md);
+// empty in local builds unless config.json names one.
+var discordClientID, discordClientSecret string
+
+// newDiscord returns the Discord integration with the application built in
+// or, for builds without one, named in config.json. The tray turns it on
+// and off as the settings say.
+func newDiscord(cfgPath string, log *slog.Logger) *discord.Client {
+	id, secret := discordClientID, discordClientSecret
+	if cfg, err := config.Load(cfgPath); err == nil && cfg.DiscordClientID != "" {
+		id, secret = cfg.DiscordClientID, cfg.DiscordClientSecret
+	}
+	return discord.New(discord.Options{
+		ClientID: id, ClientSecret: secret, Logger: log,
+		Tokens: discord.FileTokens{
+			Path:    filepath.Join(filepath.Dir(cfgPath), "discord-token"),
+			Protect: config.Protect, Unprotect: config.Unprotect,
+		},
 	})
 }
 

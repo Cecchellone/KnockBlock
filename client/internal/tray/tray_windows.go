@@ -77,6 +77,7 @@ func (a *app) onReady() {
 		OnResult:    func(r status.Result) { a.update(func(s *Snapshot) { s.Result = r }) },
 		OnState:     func(st link.State) { a.update(func(s *Snapshot) { s.Link = st }) },
 		OnDoorbell:  func() { go a.doorbell() },
+		AppMuted:    a.discordMuted,
 		Logger:      a.log,
 		ClientInfo:  "KnockBlock " + a.opts.Version,
 	})
@@ -109,6 +110,9 @@ func (a *app) onExit() {
 	}
 	if a.engine != nil {
 		a.engine.Stop() // reports offline
+	}
+	if a.opts.Discord != nil {
+		a.opts.Discord.Close()
 	}
 	a.log.Info("exited")
 }
@@ -153,10 +157,25 @@ func (a *app) startEngine() {
 	a.mu.Lock()
 	cfg := a.cfg
 	a.mu.Unlock()
+	if a.opts.Discord != nil {
+		a.opts.Discord.SetEnabled(cfg.Discord)
+	}
 	if err := a.engine.Start(cfg); err != nil {
 		a.log.Error("starting", "err", err)
 		a.update(func(s *Snapshot) { s.Link = link.State{Err: err, NeedsConfig: true} })
 	}
+}
+
+// discordMuted tells the detector whether Discord's own mute button is on
+// (Discord keeps recording while muted).
+func (a *app) discordMuted(exe string) (muted, known bool) {
+	switch exe {
+	case "discord.exe", "discordptb.exe", "discordcanary.exe":
+		if a.opts.Discord != nil {
+			return a.opts.Discord.Muted()
+		}
+	}
+	return false, false
 }
 
 func (a *app) t(key string, args ...string) string {
