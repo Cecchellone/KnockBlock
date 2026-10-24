@@ -22,8 +22,10 @@ type Deps struct {
 	OnResult    func(status.Result) // must not block
 	OnState     func(link.State)    // must not block
 	OnDoorbell  func()              // the light's doorbell rang; must not block
-	Logger      *slog.Logger
-	ClientInfo  string
+	// AppMuted is passed to the detector (detect.Options.AppMuted).
+	AppMuted   func(exe string) (muted, known bool)
+	Logger     *slog.Logger
+	ClientInfo string
 }
 
 // Engine runs the presence loop (detector → agent → link) for one
@@ -74,7 +76,7 @@ func (e *Engine) Start(cfg config.Config) error {
 	if pc == "" {
 		pc, _ = os.Hostname()
 	}
-	det, err := e.deps.NewDetector(detect.Options{Ignore: cfg.Ignore, Names: cfg.AppNames})
+	det, err := e.deps.NewDetector(detect.Options{Ignore: cfg.Ignore, Names: cfg.AppNames, AppMuted: e.deps.AppMuted})
 	if err != nil {
 		return err
 	}

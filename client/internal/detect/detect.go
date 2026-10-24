@@ -73,6 +73,10 @@ type Options struct {
 	// Names maps executable or package names to friendly names, on top of
 	// (and overriding) the built-in table.
 	Names map[string]string
+	// AppMuted reports whether an app that keeps recording while muted
+	// (Discord) has its own mute button on, given its lower-case
+	// executable name; known is false when the app cannot tell.
+	AppMuted func(exe string) (muted, known bool)
 }
 
 // walker visits every consent store entry of one device: the Store apps,
@@ -131,16 +135,17 @@ type cameraStreams interface {
 // only the walker, the process list and the audio sessions are
 // Windows-specific.
 type consentStore struct {
-	w      walker
-	audio  captureSessions        // nil: the microphone comes from the consent store
-	camera cameraStreams          // nil: the camera comes from the consent store
-	procs  processes              // nil: entries are trusted as they are
-	polled bool                   // procs refreshed during this poll
-	ignore map[string]bool        // lower-case exe or package names
-	names  map[string]string      // lower-case exe or package name → friendly name
-	cache  map[string]cachedEntry // by raw key, so steady polls allocate nothing
-	dst    *Snapshot
-	dev    Device
+	w        walker
+	audio    captureSessions                      // nil: the microphone comes from the consent store
+	camera   cameraStreams                        // nil: the camera comes from the consent store
+	appMuted func(exe string) (muted, known bool) // Options.AppMuted; may be nil
+	procs    processes                            // nil: entries are trusted as they are
+	polled   bool                                 // procs refreshed during this poll
+	ignore   map[string]bool                      // lower-case exe or package names
+	names    map[string]string                    // lower-case exe or package name → friendly name
+	cache    map[string]cachedEntry               // by raw key, so steady polls allocate nothing
+	dst      *Snapshot
+	dev      Device
 	// visitFn is c.visit, bound once: a method value allocates when taken.
 	visitFn func(key []byte, packaged bool, start, stop uint64)
 
@@ -184,6 +189,7 @@ func newConsentStore(w walker, procs processes, opts Options) *consentStore {
 	for k, v := range opts.Names {
 		c.names[strings.ToLower(k)] = v
 	}
+	c.appMuted = opts.AppMuted
 	c.visitFn = c.visit
 	c.captureFn = c.addRecording
 	c.streamFn = c.addStream
@@ -317,14 +323,20 @@ func (c *consentStore) pollAudio() error {
 		if !ok || e.ignored {
 			continue
 		}
+		muted := rec.muted
+		if !muted && c.appMuted != nil {
+			if m, known := c.appMuted(e.exe); known {
+				muted = m // muted inside the app (Discord)
+			}
+		}
 		// A program can hold several sessions, on several devices: it is
 		// muted only if every one of them is.
 		if i := indexKey(c.dst.Mic, e.app.Key); i >= 0 {
-			c.dst.Mic[i].Muted = c.dst.Mic[i].Muted && rec.muted
+			c.dst.Mic[i].Muted = c.dst.Mic[i].Muted && muted
 			continue
 		}
 		app := e.app
-		app.Muted = rec.muted
+		app.Muted = muted
 		if e.browser {
 			app = c.webApp(app, e.exe)
 		}

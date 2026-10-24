@@ -80,7 +80,7 @@ func (w *Window) Close() {
 }
 
 // Tabs is the number of tabs.
-const Tabs = 4
+const Tabs = 5
 
 // SelectTab shows tab i (0-based) of the open window.
 func (w *Window) SelectTab(i int) {
@@ -141,11 +141,15 @@ type control struct {
 
 // Tabs, in order.
 const (
-	pageConnection = iota
+	pagePC = iota
 	pageLight
-	pagePC
+	pageIntegrations
 	pageApps
+	pageConnection
 )
+
+// statusTimer refreshes the Discord state while the window is open.
+const statusTimer = 1
 
 // win is one open window. Every field but the ones under mu belongs to the
 // window thread.
@@ -171,6 +175,7 @@ type win struct {
 	pcName, lang                                windows.HWND
 	sendApps, doorbell, notify, autostart       windows.HWND
 	ignore, names                               windows.HWND
+	discord, discordStatus                      windows.HWND
 	saveStatus                                  windows.HWND
 	langChoices, devLangChoices, flipChoices    []Choice
 	notifyChoices                               []Choice
@@ -351,7 +356,7 @@ func (c *win) build() {
 	// so labels and check boxes match it (the themed tab body is a shade
 	// lighter and would show their rectangles).
 	c.tabs = c.add("SysTabControl32", "", wsTabStop|wsClipSiblings, 0, idTabs, box{12, 12, clientW - 24, 26})
-	for i, key := range []string{"settings.tab_connection", "settings.device", "settings.this_pc", "settings.apps"} {
+	for i, key := range []string{"settings.this_pc", "settings.device", "settings.tab_integrations", "settings.apps", "settings.tab_connection"} {
 		item := tcItem{Mask: tcifText, Text: utf16Ptr(t(key))}
 		sendMessage(c.tabs, tcmInsertItem, uintptr(i), uintptr(unsafe.Pointer(&item)))
 	}
@@ -408,6 +413,13 @@ func (c *win) build() {
 	c.notify = combo(c.notifyChoices, box{x, 274, cw, 23})
 	c.autostart = check(t("settings.autostart"), box{x, 306, iw, 30})
 
+	// Integrations.
+	c.building = pageIntegrations
+	c.discord = check(t("settings.discord"), box{x, 48, iw, 30})
+	label(t("settings.discord_help"), box{x, 82, iw, 48})
+	c.discordStatus = label(c.model.DiscordState(), box{x, 136, iw, 32})
+	enableWindow(c.discord, c.model.HasDiscord())
+
 	// Apps.
 	c.building = pageApps
 	multi := uint32(wsTabStop | wsVScroll | esMultiline | esAutoVScroll | esWantReturn)
@@ -419,11 +431,17 @@ func (c *win) build() {
 	label(t("settings.names_help"), box{x, 284, iw, 32})
 
 	// No Save or Cancel: every change is saved at once (a text field when
-	// it loses the focus). The line at the bottom says so, or why a change
-	// was not saved.
+	// it loses the focus). The line at the bottom says why a change was not
+	// saved, and is empty otherwise.
 	c.building = -1
-	c.saveStatus = label(t("settings.autosave"), box{x, 398, iw, 20})
-	c.showPage(pageConnection)
+	c.saveStatus = label("", box{x, 398, iw, 20})
+	// The first time (no key yet) the connection is what needs filling in.
+	if c.model.KeySaved() {
+		c.showPage(pagePC)
+	} else {
+		c.showPage(pageConnection)
+	}
+	procSetTimer.Call(uintptr(c.hwnd), statusTimer, 1000, 0)
 }
 
 func fillCombo(h windows.HWND, choices []Choice) {
@@ -666,6 +684,7 @@ func (c *win) fill(f Form) {
 	setCheck(c.doorbell, f.Doorbell)
 	selectChoice(c.notify, c.notifyChoices, f.Notify)
 	setCheck(c.autostart, f.Autostart)
+	setCheck(c.discord, f.Discord)
 }
 
 func (c *win) form() Form {
@@ -675,8 +694,9 @@ func (c *win) form() Form {
 		Language: chosen(c.lang, c.langChoices),
 		SendApps: isChecked(c.sendApps), Doorbell: isChecked(c.doorbell),
 		Notify: chosen(c.notify, c.notifyChoices), Autostart: isChecked(c.autostart),
-		Ignore: strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
-		Names:  strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
+		Discord: isChecked(c.discord),
+		Ignore:  strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
+		Names:   strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
 	}
 }
 
@@ -746,7 +766,7 @@ func (c *win) save(focus bool) bool {
 		f.Key, f.RemoveKey = "", false
 	}
 	c.lastSaved = f
-	setText(c.saveStatus, c.model.T("settings.saved"))
+	setText(c.saveStatus, "")
 	return true
 }
 
@@ -777,7 +797,7 @@ func (c *win) deviceSaved() {
 		setText(c.saveStatus, c.model.DeviceError(err))
 		return
 	}
-	setText(c.saveStatus, c.model.T("settings.saved"))
+	setText(c.saveStatus, "")
 }
 
 // changed saves after a control changed: ctl sent the notification code.
@@ -795,7 +815,7 @@ func (c *win) changed(ctl windows.HWND, code uintptr) {
 		if code == cbnSelChange {
 			c.save(false)
 		}
-	case c.sendApps, c.doorbell, c.autostart, c.removeKey:
+	case c.sendApps, c.doorbell, c.autostart, c.removeKey, c.discord:
 		if code == bnClicked {
 			c.save(false)
 		}
@@ -865,6 +885,7 @@ func (c *win) dpiChanged(dpi uint32) {
 }
 
 func (c *win) destroyed() {
+	procKillTimer.Call(uintptr(c.hwnd), statusTimer)
 	if c.cancelTest != nil {
 		c.cancelTest()
 	}
@@ -936,6 +957,11 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 			return 0
 		case wmDeviceSaved:
 			c.deviceSaved()
+			return 0
+		case wmTimer:
+			if wParam == statusTimer && c.page == pageIntegrations {
+				setText(c.discordStatus, c.model.DiscordState())
+			}
 			return 0
 		case wmSelectTab:
 			c.showPage(int(wParam) % Tabs)
