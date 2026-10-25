@@ -103,18 +103,19 @@ These three requirements drive every design decision. If a change conflicts with
 - Target board: Waveshare ESP32-C6-LCD-1.47. Use `esp32: variant: esp32c6` with `framework: type: esp-idf`.
 - **Verify before writing pins**: display (SPI pins, CS, DC, RST, backlight), LED GPIO (believed to be GPIO8), panel dimensions and offsets for the ST7789 172×320. Take them from the official Waveshare wiki/schematic and note the source URL in a YAML comment. Do not guess: a wrong pin means a black screen.
 - Entities exposed over the Native API (names in English, stable IDs):
-  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `mic`, `camera`, `call`, `dnd`, `offline`. It shows the **combined** status of all sources (see Presence below) and updates LED colour and display label. Setting it directly (Home Assistant) reports the "manual" source.
+  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `muted`, `mic`, `camera`, `call`, `dnd`, `night`, `offline`. It shows the **combined** status of all sources (see Presence below) and updates LED colour and display label. Setting it directly (Home Assistant) reports the "manual" source.
   - `select` **`display_language`** — options are language codes (`en`, `it`, …); persisted across reboots (`restore_value: true`).
   - API action **`report_presence(pc, status, app)`** — called by every PC app on change and at least every ~30 s.
   - `text_sensor` **`active_app`**, **`active_pc`** — app and PC causing the current status; **`status_label`** — the localized label shown.
   - `button` **`heartbeat`** — keeps the manual source alive.
+  - `switch` **`night_mode`** (restored) and **`phone_call`** (off at boot, off by itself after 4 h) — states set by Home Assistant automations (`docs/home-assistant.md`).
   - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
   - `switch` **`flip_display`** (board) — rotates the picture by 180° (restored across reboots).
   - `number` **`led_brightness`** (board) — default status LED brightness in %, restored; the PC settings' Device tab shows it.
   - Display layout (board): a slightly darker info bar at the top (PC left, app centre, clock or call minutes right; `privacy_mode` hides PC and app) and the localized label below. The clock comes from SNTP (`timezone` substitution).
   - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a standard Windows notification.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
-- **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `dnd` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
+- **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `night` > `dnd` > `muted` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
 - `api:` with `encryption: key: !secret api_encryption_key` and **`reboot_timeout: 0s`** (otherwise the device reboots in a loop when neither the PC nor Home Assistant is connected).
 - `ota:` and `logger:` enabled; no `web_server`.
 - Fonts: the display font **must include accented glyphs** used by supported languages (at least `àèéìòù ÀÈÉÌÒÙ`). When a language is added, extend the glyph set.

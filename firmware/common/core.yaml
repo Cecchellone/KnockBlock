@@ -26,6 +26,8 @@ substitutions:
   doorbell_cooldown_ms: "3000"
   # How long a message from a PC (show_message) stays on the display.
   message_duration_ms: "20000"
+  # The Phone call switch turns itself off after this long.
+  phone_call_max: 4h
 
 knockblock_i18n:
   id: labels
@@ -104,7 +106,7 @@ select:
     id: status
     name: Status
     icon: mdi:door
-    options: [free, muted, mic, camera, call, dnd, offline]
+    options: [free, muted, mic, camera, call, dnd, night, offline]
     initial_option: offline
     restore_value: false
     set_action:
@@ -124,6 +126,49 @@ select:
     restore_value: true
     on_value:
       - script.execute: status_changed
+
+switch:
+  # Night mode: the light says "Sleeping", dimmed, until turned off (from
+  # Home Assistant, e.g. on a schedule). It ranks above dnd but below a PC
+  # in a call (docs/home-assistant.md).
+  - platform: template
+    id: night_mode
+    name: Night mode
+    icon: mdi:weather-night
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - lambda: 'id(presence).report(StringRef("~night"), StringRef("night"), StringRef());'
+    on_turn_off:
+      - lambda: 'id(presence).report(StringRef("~night"), StringRef("offline"), StringRef());'
+
+  # A call on the phone, turned on and off by a Home Assistant automation
+  # (e.g. the companion app's phone state). The light shows "In a call"
+  # with the phone icon and the call duration. It turns itself off after
+  # ${phone_call_max} in case the automation never does.
+  - platform: template
+    id: phone_call
+    name: Phone call
+    icon: mdi:phone-in-talk
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - lambda: 'id(presence).report(StringRef("~phone"), StringRef("call"), StringRef(), StringRef("call"));'
+      - script.execute: phone_call_limit
+    on_turn_off:
+      - script.stop: phone_call_limit
+      - lambda: 'id(presence).report(StringRef("~phone"), StringRef("offline"), StringRef());'
+
+interval:
+  # The switches are sources like the PCs: report them again well within
+  # the watchdog timeout while they are on.
+  - interval: 30s
+    then:
+      - lambda: |-
+          if (id(night_mode).state)
+            id(presence).report(StringRef("~night"), StringRef("night"), StringRef());
+          if (id(phone_call).state)
+            id(presence).report(StringRef("~phone"), StringRef("call"), StringRef(), StringRef("call"));
 
 button:
   # Keeps a status set directly on the `status` select alive. PC apps use
@@ -186,6 +231,12 @@ text_sensor:
     update_interval: never
 
 script:
+  - id: phone_call_limit
+    mode: restart
+    then:
+      - delay: ${phone_call_max}
+      - switch.turn_off: phone_call
+
   - id: status_changed
     mode: queued
     then:

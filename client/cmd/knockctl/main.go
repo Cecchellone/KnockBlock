@@ -5,9 +5,10 @@
 //
 //	knockctl [flags] list               list entities
 //	knockctl [flags] watch              print state changes until Ctrl-C
-//	knockctl [flags] status <id>        set the status (free, muted, mic, camera, call, dnd, offline)
+//	knockctl [flags] status <id>        set the status (free, muted, mic, camera, call, dnd, night, offline)
 //	knockctl [flags] lang <code>        set the display language (en, it, ...)
 //	knockctl [flags] heartbeat          press the heartbeat button
+//	knockctl [flags] switch <id> on|off turn a switch on or off (night_mode, phone_call, ...)
 //	knockctl [flags] report <pc> <status> [app]
 //	                                    report a PC's status, as the tray app does
 //	knockctl detect                     list the Windows consent store entries, the audio
@@ -58,7 +59,7 @@ func run() error {
 	interval := flag.Duration("interval", time.Second, "agent: detection poll interval")
 	fakeDetect := flag.String("fake-detect", "", "agent: read apps in use from this file instead of the registry (lines: mic|camera <exe or package>)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|ring|flip on|off|report <pc> <status> [app]|detect|agent\n\nflags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|ring|flip on|off|switch <id> on|off|report <pc> <status> [app]|detect|agent\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -158,6 +159,15 @@ func run() error {
 			return errors.New("device has no flip_display switch")
 		}
 		return conn.SetSwitch(cmdCtx, e.Key, args[1] == "on")
+	case "switch":
+		if len(args) != 3 || (args[2] != "on" && args[2] != "off") {
+			return errors.New("usage: knockctl switch <id> on|off (e.g. night_mode, phone_call)")
+		}
+		e, ok := ents.Find(espapi.KindSwitch, args[1])
+		if !ok {
+			return fmt.Errorf("device has no %s switch", args[1])
+		}
+		return conn.SetSwitch(cmdCtx, e.Key, args[2] == "on")
 	case "report":
 		if len(args) < 3 || len(args) > 4 {
 			return errors.New("usage: knockctl report <pc> <status> [app]")

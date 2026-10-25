@@ -72,6 +72,9 @@ color:
     hex: E00000
   - id: color_dnd
     hex: 8000C0
+  # Night mode: a dark blue, with dimmed text and LED.
+  - id: color_night
+    hex: 0A1440
   - id: color_offline
     hex: 303030
 
@@ -157,7 +160,9 @@ display:
       const Color bg = id(current_color);
       // Black text on light backgrounds, white otherwise.
       const int luma = (299 * bg.r + 587 * bg.g + 114 * bg.b) / 1000;
-      const Color fg = luma > 150 ? Color::BLACK : Color::WHITE;
+      // Night mode dims the text too.
+      const bool night = id(status).current_option() == "night";
+      const Color fg = night ? Color(110, 120, 160) : luma > 150 ? Color::BLACK : Color::WHITE;
       it.fill(bg);
 
       if (id(doorbell_shown)) {
@@ -428,6 +433,7 @@ script:
           else if (st == "camera") c = id(color_camera);
           else if (st == "call") c = id(color_call);
           else if (st == "dnd") c = id(color_dnd);
+          else if (st == "night") c = id(color_night);
           id(current_color) = c;
       - if:
           condition:
@@ -437,7 +443,10 @@ script:
           else:
             - light.turn_on:
                 id: status_led
-                brightness: !lambda 'return id(led_brightness).state / 100.0f;'
+                # Night mode keeps the LED faint.
+                brightness: !lambda |-
+                  const float b = id(led_brightness).state / 100.0f;
+                  return id(status).current_option() == "night" ? std::min(b, 0.1f) : b;
                 red: !lambda 'return id(current_color).r / 255.0f;'
                 green: !lambda 'return id(current_color).g / 255.0f;'
                 blue: !lambda 'return id(current_color).b / 255.0f;'

@@ -13,12 +13,12 @@ static const char *const TAG = "knockblock_presence";
 
 // Status IDs from weakest to strongest; index 0 (offline) means "no live
 // source". Keep in sync with the `status` select options in common/core.yaml.
-static const char *const STATUSES[] = {"offline", "free", "muted", "dnd", "mic", "camera", "call"};
+static const char *const STATUSES[] = {"offline", "free", "muted", "dnd", "night", "mic", "camera", "call"};
 static constexpr uint8_t OFFLINE = 0;
 static constexpr uint8_t NUM_STATUSES = sizeof(STATUSES) / sizeof(STATUSES[0]);
 
 // Indices of STATUSES, for the devices implied by a status.
-static constexpr int S_MUTED = 2, S_MIC = 4, S_CAMERA = 5, S_CALL = 6;
+static constexpr int S_MUTED = 2, S_MIC = 5, S_CAMERA = 6, S_CALL = 7;
 
 // Devices implied by a status, for reports that do not list them (old PC
 // apps, the manual source).
@@ -211,7 +211,9 @@ void Presence::publish_() {
   const uint8_t status = best != nullptr ? best->status : OFFLINE;
   const uint8_t devices = best != nullptr ? best->devices : 0;
   const char *app = best != nullptr ? best->app : "";
-  const char *pc = best != nullptr ? best->name : "";
+  // Sources named "~…" are the light's own switches (night mode, phone
+  // call): no PC to show.
+  const char *pc = best != nullptr && best->name[0] != '~' ? best->name : "";
   // The call timer runs while the source shown is in a call, so a call
   // that goes from muted to camera keeps its start.
   if ((devices & Presence::CALL) == 0)
