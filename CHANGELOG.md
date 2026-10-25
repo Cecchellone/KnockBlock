@@ -18,6 +18,13 @@ changes per minor version.
 
 ### Light (firmware)
 
+- During a call the duration in the info bar is bold, in a red pill (white
+  on a red screen), so it is not mistaken for the clock.
+- Resting screen: with no PC connected, or with every PC away, the display
+  is black with only a small dot, so it does not light up the hallway.
+- New status `away` (a PC that is locked or idle), the weakest after
+  `offline`.
+
 - Doorbell: the board's BOOT button (or any GPIO, `doorbell_pin`) and the
   `Ring doorbell` button fire a `doorbell` event. The display shows a bell
   and the LED blinks white. Rings closer than 3 s count as one.
@@ -50,6 +57,14 @@ changes per minor version.
   shows them to Home Assistant.
 
 ### PC app (Windows)
+
+- The doorbell notification has quick replies: "Come in", "5 minutes",
+  "Not now".
+- Microsoft Teams' mute button can drive the light, like Discord's: tick
+  it in the Integrations tab after turning on Teams' third-party API
+  (docs/teams.md).
+- "Away": the PC reports `away` while it is locked or unused for 10
+  minutes (setting in This PC, on by default).
 
 - The doorbell notification has a reply box when it shows on screen
   (notification mode "text" or "text and sound"): type an answer, press

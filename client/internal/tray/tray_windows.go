@@ -25,6 +25,7 @@ import (
 	"github.com/Cecchellone/KnockBlock/client/internal/endsession"
 	"github.com/Cecchellone/KnockBlock/client/internal/i18n"
 	"github.com/Cecchellone/KnockBlock/client/internal/icon"
+	"github.com/Cecchellone/KnockBlock/client/internal/idle"
 	"github.com/Cecchellone/KnockBlock/client/internal/link"
 	"github.com/Cecchellone/KnockBlock/client/internal/status"
 	"github.com/Cecchellone/KnockBlock/client/internal/sysevents"
@@ -77,7 +78,8 @@ func (a *app) onReady() {
 		OnResult:    func(r status.Result) { a.update(func(s *Snapshot) { s.Result = r }) },
 		OnState:     func(st link.State) { a.update(func(s *Snapshot) { s.Link = st }) },
 		OnDoorbell:  func() { go a.doorbell() },
-		AppMuted:    a.discordMuted,
+		AppMuted:    a.appMuted,
+		Away:        func() bool { return idle.Away(idle.Threshold) },
 		Logger:      a.log,
 		ClientInfo:  "KnockBlock " + a.opts.Version,
 	})
@@ -113,6 +115,9 @@ func (a *app) onExit() {
 	}
 	if a.opts.Discord != nil {
 		a.opts.Discord.Close()
+	}
+	if a.opts.Teams != nil {
+		a.opts.Teams.Close()
 	}
 	a.log.Info("exited")
 }
@@ -160,19 +165,26 @@ func (a *app) startEngine() {
 	if a.opts.Discord != nil {
 		a.opts.Discord.SetEnabled(cfg.Discord)
 	}
+	if a.opts.Teams != nil {
+		a.opts.Teams.SetEnabled(cfg.Teams)
+	}
 	if err := a.engine.Start(cfg); err != nil {
 		a.log.Error("starting", "err", err)
 		a.update(func(s *Snapshot) { s.Link = link.State{Err: err, NeedsConfig: true} })
 	}
 }
 
-// discordMuted tells the detector whether Discord's own mute button is on
-// (Discord keeps recording while muted).
-func (a *app) discordMuted(exe string) (muted, known bool) {
+// appMuted tells the detector whether Discord's or Teams' own mute button
+// is on (both keep recording while muted).
+func (a *app) appMuted(exe string) (muted, known bool) {
 	switch exe {
 	case "discord.exe", "discordptb.exe", "discordcanary.exe":
 		if a.opts.Discord != nil {
 			return a.opts.Discord.Muted()
+		}
+	case "ms-teams.exe", "teams.exe":
+		if a.opts.Teams != nil {
+			return a.opts.Teams.Muted()
 		}
 	}
 	return false, false
@@ -406,6 +418,7 @@ func (a *app) doorbell() {
 		err := showReplyToast(replyToast{
 			Title: a.t("notify.doorbell_title"), Body: a.t("notify.doorbell"),
 			Placeholder: a.t("notify.doorbell_reply"), Send: a.t("notify.doorbell_send"),
+			Quick: []string{a.t("notify.quick_come_in"), a.t("notify.quick_minutes"), a.t("notify.quick_not_now")},
 			Sound: mode == config.NotifyFull,
 		}, a.reply)
 		if err == nil {

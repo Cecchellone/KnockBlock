@@ -22,6 +22,8 @@ type Deps struct {
 	OnResult    func(status.Result) // must not block
 	OnState     func(link.State)    // must not block
 	OnDoorbell  func()              // the light's doorbell rang; must not block
+	// Away reports whether nobody uses this PC (idle.Away); nil: never.
+	Away func() bool
 	// AppMuted is passed to the detector (detect.Options.AppMuted).
 	AppMuted   func(exe string) (muted, known bool)
 	Logger     *slog.Logger
@@ -36,6 +38,8 @@ type Engine struct {
 	// doorbell is read by the connection's doorbell hook, so turning the
 	// setting on or off needs no reconnection.
 	doorbell atomic.Bool
+	// away turns the away status on or off without reconnecting.
+	away atomic.Bool
 
 	mu       sync.Mutex
 	override status.Override
@@ -81,6 +85,7 @@ func (e *Engine) Start(cfg config.Config) error {
 		return err
 	}
 	e.doorbell.Store(cfg.Doorbell)
+	e.away.Store(!cfg.AwayOff)
 
 	e.mu.Lock()
 	if r := e.run; r != nil && r.address == cfg.Address() && r.key == key {
@@ -112,6 +117,7 @@ func (e *Engine) Start(cfg config.Config) error {
 	a := agent.New(agent.Config{
 		PC: pc, SendApps: cfg.SendAppNames, Detector: det, Link: sup,
 		OnResult: e.deps.OnResult, Logger: e.deps.Logger,
+		Away: func() bool { return e.away.Load() && e.deps.Away != nil && e.deps.Away() },
 	})
 
 	e.mu.Lock()

@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Language-neutral status IDs; keep in sync with the `status` select options
 # in common/core.yaml and with client/internal/status.
-STATUS_IDS = ("free", "muted", "mic", "camera", "call", "dnd", "night", "offline")
+STATUS_IDS = ("free", "away", "muted", "mic", "camera", "call", "dnd", "night", "offline")
 
 CONF_LANGUAGES = "languages"
 CONF_FALLBACK = "fallback"

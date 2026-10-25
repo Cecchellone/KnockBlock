@@ -164,7 +164,7 @@ select:
     id: status
     name: Status
     icon: mdi:door
-    options: [free, muted, mic, camera, call, dnd, night, offline]
+    options: [free, away, muted, mic, camera, call, dnd, night, offline]
     initial_option: offline
     restore_value: false
     set_action:

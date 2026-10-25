@@ -11,6 +11,7 @@ import (
 // identifiers, not text: the tray and the display localize them.
 const (
 	Free    = "free"
+	Away    = "away"  // nobody at this PC: locked or idle, nothing in use
 	Muted   = "muted" // in a call with the microphone muted and no camera
 	Mic     = "mic"
 	Camera  = "camera"
@@ -75,7 +76,7 @@ func (r Result) Devices() string {
 // Compute derives this PC's status from what is in use (CLAUDE.md §5.3):
 // microphone and camera → call, camera → camera, microphone → mic, a
 // microphone kept open but muted (a call with everything off) → muted,
-// nothing → free. A manual override wins. The app is the one using the
+// nothing → free, or away when nobody uses the PC. A manual override wins. The app is the one using the
 // camera if any, else the microphone; among several, a known app first,
 // then by name, so the choice is stable between polls. With sendApps false
 // the app is always empty.
@@ -108,6 +109,9 @@ func Compute(s *detect.Snapshot, o Override, sendApps bool) Result {
 		r.Status = Mic
 	case r.InCall:
 		r.Status = Muted
+	case s.Away:
+		r.Status = Away
+		return r
 	default:
 		r.Status = Free
 		return r

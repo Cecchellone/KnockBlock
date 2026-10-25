@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -75,7 +76,8 @@ const (
 	sFalse                     = 1
 	eNoInterface               = 0x80004002
 	replyInput, replyAction    = "reply", "reply"
-	maxReply                   = 120 // bytes; the light cuts there too
+	quickAction                = "quick:" // + the text of a quick reply button
+	maxReply                   = 120      // bytes; the light cuts there too
 )
 
 // comObj is a COM interface pointer: a pointer to a vtable pointer.
@@ -338,7 +340,10 @@ func replyText(args *comObj) (string, bool) {
 		return "", false
 	}
 	defer arg.free()
-	if arg.String() != replyAction {
+	switch a := arg.String(); {
+	case strings.HasPrefix(a, quickAction):
+		return a[len(quickAction):], true // a quick reply button
+	case a != replyAction:
 		return "", false
 	}
 	a2 := args.query(&iidIToastActivatedEventArgs2)
@@ -415,17 +420,23 @@ func registerToastApp() error {
 // replyToast describes the doorbell toast.
 type replyToast struct {
 	Title, Body       string
-	Placeholder, Send string // the reply box's hint and send button
-	Sound             bool   // Windows' notification sound
+	Placeholder, Send string   // the reply box's hint and send button
+	Quick             []string // quick reply buttons, sent as they are
+	Sound             bool     // Windows' notification sound
 }
 
-// toastXML builds the toast: title, text, and a reply box that sends with
-// Enter or its button.
+// toastXML builds the toast: title, text, a reply box that sends with
+// Enter or its button, and quick reply buttons (Windows shows up to five
+// actions: the send button and four more).
 func (t replyToast) toastXML() string {
 	esc := func(s string) string {
 		var b bytes.Buffer
 		xml.EscapeText(&b, []byte(s)) // writes to memory: cannot fail
 		return b.String()
+	}
+	var quick string
+	for _, q := range t.Quick[:min(len(t.Quick), 4)] {
+		quick += `<action content="` + esc(q) + `" arguments="` + esc(quickAction+q) + `" activationType="foreground"/>`
 	}
 	audio := `<audio silent="true"/>`
 	if t.Sound {
@@ -436,7 +447,7 @@ func (t replyToast) toastXML() string {
 		`</binding></visual><actions>` +
 		`<input id="` + replyInput + `" type="text" placeHolderContent="` + esc(t.Placeholder) + `"/>` +
 		`<action content="` + esc(t.Send) + `" arguments="` + replyAction + `" hint-inputId="` + replyInput + `" activationType="foreground"/>` +
-		`</actions>` + audio + `</toast>`
+		quick + `</actions>` + audio + `</toast>`
 }
 
 // showReplyToast shows t; reply is called, on its own goroutine, with the

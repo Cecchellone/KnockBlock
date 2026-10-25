@@ -23,6 +23,7 @@ import (
 	"github.com/Cecchellone/KnockBlock/client/internal/logfile"
 	"github.com/Cecchellone/KnockBlock/client/internal/memdebug"
 	"github.com/Cecchellone/KnockBlock/client/internal/settingsui"
+	"github.com/Cecchellone/KnockBlock/client/internal/teams"
 	"github.com/Cecchellone/KnockBlock/client/internal/tray"
 	"github.com/Cecchellone/KnockBlock/client/locales"
 )
@@ -78,6 +79,13 @@ func run(o options) error {
 		return err
 	}
 	disc := newDiscord(cfgPath, log)
+	tms := teams.New(teams.Options{
+		Version: version, Logger: log,
+		Tokens: teams.FileToken{
+			Path:    filepath.Join(filepath.Dir(cfgPath), "teams-token"),
+			Protect: config.Protect, Unprotect: config.Unprotect,
+		},
+	})
 	hostname, _ := os.Hostname()
 	settings := settingsui.NewWindow(settingsui.Deps{
 		ConfigPath:      cfgPath,
@@ -88,6 +96,7 @@ func run(o options) error {
 		Logger:          log,
 		ClientInfo:      "KnockBlock " + version + " (settings)",
 		Discord:         disc,
+		Teams:           tms,
 	})
 	defer settings.Close()
 	if o.settingsSmoke != "" {
@@ -99,6 +108,7 @@ func run(o options) error {
 		Logger:       log,
 		OpenSettings: func(string) error { return settings.Open() },
 		Discord:      disc,
+		Teams:        tms,
 	})
 }
 

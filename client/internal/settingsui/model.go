@@ -22,6 +22,7 @@ import (
 	"github.com/Cecchellone/KnockBlock/client/internal/espapi"
 	"github.com/Cecchellone/KnockBlock/client/internal/i18n"
 	"github.com/Cecchellone/KnockBlock/client/internal/link"
+	"github.com/Cecchellone/KnockBlock/client/internal/teams"
 )
 
 // Autostart reads and changes "Start with Windows".
@@ -54,6 +55,14 @@ type Deps struct {
 	// Discord is the Discord integration, for its state in the
 	// Integrations tab; nil when there is none.
 	Discord DiscordStatus
+	// Teams is the Teams integration, for its state; nil when there is
+	// none.
+	Teams TeamsStatus
+}
+
+// TeamsStatus tells what the Teams integration is doing.
+type TeamsStatus interface {
+	State() teams.State
 }
 
 // DiscordStatus tells what the Discord integration is doing.
@@ -94,6 +103,10 @@ type Form struct {
 	Autostart bool
 	// Discord follows Discord's mute and deafen buttons.
 	Discord bool
+	// Away shows "away" while the PC is locked or idle.
+	Away bool
+	// Teams follows the Teams mute button.
+	Teams bool
 	// Ignore and Names hold one entry per line ("exe = name" for Names).
 	Ignore, Names string
 }
@@ -172,6 +185,14 @@ func (m *Model) DiscordState() string {
 	return m.T(m.deps.Discord.State().Key())
 }
 
+// TeamsState describes what the Teams integration is doing, localized.
+func (m *Model) TeamsState() string {
+	if m.deps.Teams == nil {
+		return m.T(teams.Off.Key())
+	}
+	return m.T(m.deps.Teams.State().Key())
+}
+
 // DefaultPCName is the name reported when the PC name field is empty.
 func (m *Model) DefaultPCName() string { return m.deps.Hostname }
 
@@ -188,6 +209,8 @@ func (m *Model) Form() Form {
 		SendApps: cfg.SendAppNames, Doorbell: cfg.Doorbell, Notify: cfg.Notify,
 		Autostart: m.deps.Autostart.Enabled(),
 		Discord:   cfg.Discord,
+		Away:      !cfg.AwayOff,
+		Teams:     cfg.Teams,
 		Ignore:    strings.Join(cfg.Ignore, "\n"), Names: strings.Join(names, "\n"),
 	}
 }
@@ -255,7 +278,8 @@ func (m *Model) apply(f Form) (config.Config, error) {
 	cfg.KeyPlain = ""
 	cfg.PCName = strings.TrimSpace(f.PCName)
 	cfg.Language = m.knownLanguage(f.Language)
-	cfg.SendAppNames, cfg.Doorbell, cfg.Discord = f.SendApps, f.Doorbell, f.Discord
+	cfg.SendAppNames, cfg.Doorbell, cfg.Discord, cfg.AwayOff = f.SendApps, f.Doorbell, f.Discord, !f.Away
+	cfg.Teams = f.Teams
 	if slices.Contains(config.NotifyModes, f.Notify) {
 		cfg.Notify = f.Notify
 	}

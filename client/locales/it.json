@@ -92,5 +92,16 @@
   "discord.consent": "Autorizza KnockBlock nella finestra che Discord ti sta mostrando.",
   "discord.denied": "Non autorizzato in Discord. Spegni e riaccendi per riprovare.",
   "discord.connected": "Collegato: la luce segue i tuoi pulsanti muto e silenzia.",
-  "discord.failed": "Impossibile collegarsi a Discord; riprovo."
+  "discord.failed": "Impossibile collegarsi a Discord; riprovo.",
+  "status.away": "Non al PC",
+  "settings.away": "Mostra \"Non al PC\" sulla luce quando questo PC è bloccato o inutilizzato da 10 minuti",
+  "notify.quick_come_in": "Entra",
+  "notify.quick_minutes": "5 minuti",
+  "notify.quick_not_now": "Non ora",
+  "settings.teams": "Microsoft Teams: mostra sulla luce il mio pulsante muto",
+  "settings.teams_help": "Attiva una volta l'API in Teams: Impostazioni → Privacy → Gestisci API → Abilita API. Alla prossima riunione Teams ti chiede di consentire KnockBlock.",
+  "teams.off": "Spento.",
+  "teams.not_running": "In attesa di Teams (avvialo e attiva la sua API).",
+  "teams.pairing": "Entra in una riunione e consenti KnockBlock quando Teams lo chiede.",
+  "teams.connected": "Collegato: la luce segue il tuo pulsante muto nelle riunioni."
 }

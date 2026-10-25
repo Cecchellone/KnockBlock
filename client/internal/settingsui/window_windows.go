@@ -174,8 +174,10 @@ type win struct {
 	devBacklightVal, devLEDVal                  windows.HWND // their values
 	pcName, lang                                windows.HWND
 	sendApps, doorbell, notify, autostart       windows.HWND
+	away                                        windows.HWND
 	ignore, names                               windows.HWND
 	discord, discordStatus                      windows.HWND
+	teams, teamsStatus                          windows.HWND
 	saveStatus                                  windows.HWND
 	langChoices, devLangChoices, flipChoices    []Choice
 	notifyChoices                               []Choice
@@ -412,6 +414,7 @@ func (c *win) build() {
 	c.notifyChoices = c.model.NotifyModes()
 	c.notify = combo(c.notifyChoices, box{x, 274, cw, 23})
 	c.autostart = check(t("settings.autostart"), box{x, 306, iw, 30})
+	c.away = check(t("settings.away"), box{x, 340, iw, 30})
 
 	// Integrations.
 	c.building = pageIntegrations
@@ -419,6 +422,9 @@ func (c *win) build() {
 	label(t("settings.discord_help"), box{x, 82, iw, 48})
 	c.discordStatus = label(c.model.DiscordState(), box{x, 136, iw, 32})
 	enableWindow(c.discord, c.model.HasDiscord())
+	c.teams = check(t("settings.teams"), box{x, 186, iw, 30})
+	label(t("settings.teams_help"), box{x, 220, iw, 48})
+	c.teamsStatus = label(c.model.TeamsState(), box{x, 274, iw, 32})
 
 	// Apps.
 	c.building = pageApps
@@ -685,6 +691,8 @@ func (c *win) fill(f Form) {
 	selectChoice(c.notify, c.notifyChoices, f.Notify)
 	setCheck(c.autostart, f.Autostart)
 	setCheck(c.discord, f.Discord)
+	setCheck(c.away, f.Away)
+	setCheck(c.teams, f.Teams)
 }
 
 func (c *win) form() Form {
@@ -694,9 +702,9 @@ func (c *win) form() Form {
 		Language: chosen(c.lang, c.langChoices),
 		SendApps: isChecked(c.sendApps), Doorbell: isChecked(c.doorbell),
 		Notify: chosen(c.notify, c.notifyChoices), Autostart: isChecked(c.autostart),
-		Discord: isChecked(c.discord),
-		Ignore:  strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
-		Names:   strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
+		Discord: isChecked(c.discord), Away: isChecked(c.away), Teams: isChecked(c.teams),
+		Ignore: strings.ReplaceAll(getText(c.ignore), "\r\n", "\n"),
+		Names:  strings.ReplaceAll(getText(c.names), "\r\n", "\n"),
 	}
 }
 
@@ -815,7 +823,7 @@ func (c *win) changed(ctl windows.HWND, code uintptr) {
 		if code == cbnSelChange {
 			c.save(false)
 		}
-	case c.sendApps, c.doorbell, c.autostart, c.removeKey, c.discord:
+	case c.sendApps, c.doorbell, c.autostart, c.removeKey, c.discord, c.away, c.teams:
 		if code == bnClicked {
 			c.save(false)
 		}
@@ -961,6 +969,7 @@ func wndProc(hwnd windows.HWND, m, wParam, lParam uintptr) uintptr {
 		case wmTimer:
 			if wParam == statusTimer && c.page == pageIntegrations {
 				setText(c.discordStatus, c.model.DiscordState())
+				setText(c.teamsStatus, c.model.TeamsState())
 			}
 			return 0
 		case wmSelectTab:
