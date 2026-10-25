@@ -24,25 +24,50 @@ func TestCompute(t *testing.T) {
 		sendApps bool
 		want     Result
 	}{
-		{"nothing", nil, nil, Auto, true, Result{Free, ""}},
-		{"mic only", []detect.App{discord}, nil, Auto, true, Result{Mic, "Discord"}},
-		{"camera only", nil, []detect.App{obs}, Auto, true, Result{Camera, "OBS"}},
-		{"both: camera app wins", []detect.App{discord}, []detect.App{teams}, Auto, true, Result{Call, "Teams"}},
-		{"known app before unknown", []detect.App{unknown, discord}, nil, Auto, true, Result{Mic, "Discord"}},
-		{"only unknown apps", []detect.App{unknown}, nil, Auto, true, Result{Mic, "Arecorder"}},
-		{"app names off", []detect.App{discord}, []detect.App{teams}, Auto, false, Result{Call, ""}},
-		{"muted call", []detect.App{mutedDC}, nil, Auto, true, Result{Muted, "Discord"}},
-		{"muted mic, camera on", []detect.App{mutedDC}, []detect.App{discord}, Auto, true, Result{Camera, "Discord"}},
-		{"one app muted, one live", []detect.App{mutedDC, teams}, nil, Auto, true, Result{Mic, "Teams"}},
-		{"live unknown before muted known", []detect.App{unknown, mutedTm}, nil, Auto, true, Result{Mic, "Arecorder"}},
-		{"override dnd", []detect.App{discord}, nil, ForceDND, true, Result{DND, ""}},
-		{"override free in a call", []detect.App{discord}, []detect.App{teams}, ForceFree, true, Result{Free, ""}},
+		{"nothing", nil, nil, Auto, true, Result{Status: Free, App: ""}},
+		{"mic only", []detect.App{discord}, nil, Auto, true, Result{Status: Mic, App: "Discord"}},
+		{"camera only", nil, []detect.App{obs}, Auto, true, Result{Status: Camera, App: "OBS"}},
+		{"both: camera app wins", []detect.App{discord}, []detect.App{teams}, Auto, true, Result{Status: Call, App: "Teams"}},
+		{"known app before unknown", []detect.App{unknown, discord}, nil, Auto, true, Result{Status: Mic, App: "Discord"}},
+		{"only unknown apps", []detect.App{unknown}, nil, Auto, true, Result{Status: Mic, App: "Arecorder"}},
+		{"app names off", []detect.App{discord}, []detect.App{teams}, Auto, false, Result{Status: Call, App: ""}},
+		{"muted call", []detect.App{mutedDC}, nil, Auto, true, Result{Status: Muted, App: "Discord"}},
+		{"muted mic, camera on", []detect.App{mutedDC}, []detect.App{discord}, Auto, true, Result{Status: Camera, App: "Discord"}},
+		{"one app muted, one live", []detect.App{mutedDC, teams}, nil, Auto, true, Result{Status: Mic, App: "Teams"}},
+		{"live unknown before muted known", []detect.App{unknown, mutedTm}, nil, Auto, true, Result{Status: Mic, App: "Arecorder"}},
+		{"override dnd", []detect.App{discord}, nil, ForceDND, true, Result{Status: DND, App: ""}},
+		{"override free in a call", []detect.App{discord}, []detect.App{teams}, ForceFree, true, Result{Status: Free, App: ""}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &detect.Snapshot{Mic: tt.mic, Camera: tt.cam}
-			if got := Compute(s, tt.override, tt.sendApps); got != tt.want {
+			got := Compute(s, tt.override, tt.sendApps)
+			if got.Status != tt.want.Status || got.App != tt.want.App {
 				t.Errorf("Compute = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDevices(t *testing.T) {
+	tests := []struct {
+		name     string
+		mic, cam []detect.App
+		override Override
+		want     string
+	}{
+		{"nothing", nil, nil, Auto, ""},
+		{"call", []detect.App{discord}, []detect.App{discord}, Auto, "call,mic,camera"},
+		{"muted call", []detect.App{mutedDC}, nil, Auto, "call,mic_muted"},
+		{"one app live", []detect.App{mutedDC, teams}, nil, Auto, "call,mic"},
+		{"camera only", nil, []detect.App{obs}, Auto, "camera"},
+		{"kept with an override", []detect.App{mutedDC}, []detect.App{discord}, ForceDND, "call,mic_muted,camera"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &detect.Snapshot{Mic: tt.mic, Camera: tt.cam}
+			if got := Compute(s, tt.override, true).Devices(); got != tt.want {
+				t.Errorf("Devices = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -51,8 +76,8 @@ func TestCompute(t *testing.T) {
 func TestReporter(t *testing.T) {
 	var r Reporter
 	t0 := time.Unix(1000, 0)
-	call := Result{Call, "Teams"}
-	free := Result{Free, ""}
+	call := Result{Status: Call, App: "Teams"}
+	free := Result{Status: Free, App: ""}
 
 	steps := []struct {
 		name string

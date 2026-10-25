@@ -410,3 +410,19 @@ func TestWebAppFromTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestAppMuted(t *testing.T) {
+	procs := &fakeProcs{pids: map[uint32]string{50: "discord.exe", 60: "zoom.exe"}, titles_: map[string][]string{"discord.exe": nil, "zoom.exe": nil}}
+	audio := &fakeAudio{sessions: []fakeSession{{50, true, false}, {60, true, false}}}
+	opts := Options{AppMuted: func(exe string) (bool, bool) { return exe == "discord.exe", exe == "discord.exe" }}
+	d := newConsentStore(&fakeWalker{}, procs, opts).withAudio(audio, 99)
+	var s Snapshot
+	if err := d.Poll(&s); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range s.Mic {
+		if want := a.Name == "Discord"; a.Muted != want {
+			t.Errorf("%s muted %v, want %v", a.Name, a.Muted, want)
+		}
+	}
+}

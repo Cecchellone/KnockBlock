@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/config"
+	"github.com/Cecchellone/KnockBlock/client/internal/discord"
 	"github.com/Cecchellone/KnockBlock/client/internal/espapi"
 	"github.com/Cecchellone/KnockBlock/client/internal/i18n"
 	"github.com/Cecchellone/KnockBlock/client/internal/link"
@@ -50,6 +51,15 @@ type Deps struct {
 	Dial       func(ctx context.Context, opts espapi.Options) (DeviceConn, error)
 	Logger     *slog.Logger
 	ClientInfo string
+	// Discord is the Discord integration, for its state in the
+	// Integrations tab; nil when there is none.
+	Discord DiscordStatus
+}
+
+// DiscordStatus tells what the Discord integration is doing.
+type DiscordStatus interface {
+	HasApp() bool
+	State() discord.State
 }
 
 func (d *Deps) defaults() {
@@ -82,6 +92,8 @@ type Form struct {
 	// Notify is the notification mode (config.Notify*).
 	Notify    string
 	Autostart bool
+	// Discord follows Discord's mute and deafen buttons.
+	Discord bool
 	// Ignore and Names hold one entry per line ("exe = name" for Names).
 	Ignore, Names string
 }
@@ -149,6 +161,17 @@ func (m *Model) saved() config.Config {
 	return m.cfg
 }
 
+// HasDiscord reports whether this build can follow Discord.
+func (m *Model) HasDiscord() bool { return m.deps.Discord != nil && m.deps.Discord.HasApp() }
+
+// DiscordState describes what the Discord integration is doing, localized.
+func (m *Model) DiscordState() string {
+	if m.deps.Discord == nil {
+		return m.T(discord.NoApp.Key())
+	}
+	return m.T(m.deps.Discord.State().Key())
+}
+
 // DefaultPCName is the name reported when the PC name field is empty.
 func (m *Model) DefaultPCName() string { return m.deps.Hostname }
 
@@ -164,6 +187,7 @@ func (m *Model) Form() Form {
 		PCName: cfg.PCName, Language: cfg.Language,
 		SendApps: cfg.SendAppNames, Doorbell: cfg.Doorbell, Notify: cfg.Notify,
 		Autostart: m.deps.Autostart.Enabled(),
+		Discord:   cfg.Discord,
 		Ignore:    strings.Join(cfg.Ignore, "\n"), Names: strings.Join(names, "\n"),
 	}
 }
@@ -231,7 +255,7 @@ func (m *Model) apply(f Form) (config.Config, error) {
 	cfg.KeyPlain = ""
 	cfg.PCName = strings.TrimSpace(f.PCName)
 	cfg.Language = m.knownLanguage(f.Language)
-	cfg.SendAppNames, cfg.Doorbell = f.SendApps, f.Doorbell
+	cfg.SendAppNames, cfg.Doorbell, cfg.Discord = f.SendApps, f.Doorbell, f.Discord
 	if slices.Contains(config.NotifyModes, f.Notify) {
 		cfg.Notify = f.Notify
 	}

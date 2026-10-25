@@ -29,9 +29,30 @@ changes per minor version.
 - `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
 - New status `muted` (blue): in a call with the microphone muted and the
   webcam off. It ranks below `dnd`.
+- During a call the info bar shows how long it has lasted (minutes and
+  seconds) instead of the time.
+- Messages from a PC (`show_message`) show on the display for 20 s, with a
+  white bar at the bottom that shrinks towards the centre.
+- Icons at the bottom of the display show the phone (call open), the
+  microphone (on, muted or unused) and the webcam (on or off). PC apps
+  report them with the new `report_activity` action; `active_devices`
+  shows them to Home Assistant.
 
 ### PC app (Windows)
 
+- The doorbell notification has a reply box when it shows on screen
+  (notification mode "text" or "text and sound"): type an answer, press
+  Enter, and it appears on the light for 20 s.
+- Discord's mute and deafen buttons can drive the light: tick Discord in
+  the new Integrations tab and allow KnockBlock in the window Discord
+  shows (docs/discord.md). Discord keeps the microphone open while muted,
+  so Windows alone cannot tell.
+- The settings tabs are now This PC, KnockBlock, Integrations, Apps,
+  Connection; the window opens on Connection only until a key is saved.
+- A connection attempt to the light can no longer hang: after an outage
+  the app reconnects within a minute or two.
+- The settings window has no Save or Cancel: every change is saved at
+  once (a text field when you leave it), on the light too.
 - The webcam is detected again. Recent Windows 11 builds stopped recording
   camera use where the app looked; the app now asks Windows' camera service
   which programs are streaming. A webcam used through NVIDIA Broadcast's

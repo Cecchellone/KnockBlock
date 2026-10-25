@@ -4,6 +4,7 @@ package tray
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"image"
 	"image/color"
@@ -11,8 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"fyne.io/systray"
 
@@ -74,6 +77,7 @@ func (a *app) onReady() {
 		OnResult:    func(r status.Result) { a.update(func(s *Snapshot) { s.Result = r }) },
 		OnState:     func(st link.State) { a.update(func(s *Snapshot) { s.Link = st }) },
 		OnDoorbell:  func() { go a.doorbell() },
+		AppMuted:    a.discordMuted,
 		Logger:      a.log,
 		ClientInfo:  "KnockBlock " + a.opts.Version,
 	})
@@ -106,6 +110,9 @@ func (a *app) onExit() {
 	}
 	if a.engine != nil {
 		a.engine.Stop() // reports offline
+	}
+	if a.opts.Discord != nil {
+		a.opts.Discord.Close()
 	}
 	a.log.Info("exited")
 }
@@ -150,10 +157,25 @@ func (a *app) startEngine() {
 	a.mu.Lock()
 	cfg := a.cfg
 	a.mu.Unlock()
+	if a.opts.Discord != nil {
+		a.opts.Discord.SetEnabled(cfg.Discord)
+	}
 	if err := a.engine.Start(cfg); err != nil {
 		a.log.Error("starting", "err", err)
 		a.update(func(s *Snapshot) { s.Link = link.State{Err: err, NeedsConfig: true} })
 	}
+}
+
+// discordMuted tells the detector whether Discord's own mute button is on
+// (Discord keeps recording while muted).
+func (a *app) discordMuted(exe string) (muted, known bool) {
+	switch exe {
+	case "discord.exe", "discordptb.exe", "discordcanary.exe":
+		if a.opts.Discord != nil {
+			return a.opts.Discord.Muted()
+		}
+	}
+	return false, false
 }
 
 func (a *app) t(key string, args ...string) string {
@@ -373,11 +395,53 @@ func (a *app) announceUpdate() {
 
 // doorbell tells the user that someone rang the light's doorbell, with a
 // standard Windows notification (it can be turned off in the settings).
+// When the notification shows on screen and the light can show messages,
+// it has a reply box: what the user sends appears on the light.
 func (a *app) doorbell() {
 	a.log.Info("doorbell")
+	a.mu.Lock()
+	mode := a.cfg.Notify
+	a.mu.Unlock()
+	if (mode == config.NotifySilent || mode == config.NotifyFull) && a.engine.CanShowMessage() {
+		err := showReplyToast(replyToast{
+			Title: a.t("notify.doorbell_title"), Body: a.t("notify.doorbell"),
+			Placeholder: a.t("notify.doorbell_reply"), Send: a.t("notify.doorbell_send"),
+			Sound: mode == config.NotifyFull,
+		}, a.reply)
+		if err == nil {
+			return
+		}
+		a.log.Warn("doorbell toast not shown; showing a plain notification", "err", err)
+	}
 	if err := a.notify(a.t("notify.doorbell_title"), a.t("notify.doorbell")); err != nil {
 		a.log.Warn("doorbell notification not shown", "err", err)
 	}
+}
+
+// reply shows the answer typed in the doorbell notification on the light.
+func (a *app) reply(text string) {
+	text = truncateUTF8(strings.TrimSpace(text), maxReply)
+	if text == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := a.engine.ShowMessage(ctx, text); err != nil {
+		a.log.Warn("reply not shown on the light", "err", err)
+		return
+	}
+	a.log.Info("reply shown on the light")
+}
+
+// truncateUTF8 cuts s to at most n bytes without splitting a character.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // notify shows a notification as the settings say (none, silent, sound

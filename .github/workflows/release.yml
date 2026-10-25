@@ -115,6 +115,12 @@ jobs:
 
       - name: Build MSI
         shell: pwsh
+        env:
+          # The Discord application of the Integrations tab (docs/discord.md);
+          # empty when the secrets are not set (the integration then says
+          # it is not available).
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
         run: scripts/build-msi.ps1 -Version "${{ needs.version.outputs.version }}"
 
       - name: Build an older MSI for the upgrade test

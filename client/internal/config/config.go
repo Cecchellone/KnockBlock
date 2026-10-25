@@ -45,6 +45,13 @@ type Config struct {
 	Ignore []string `json:"ignore,omitempty"`
 	// AppNames maps executables or packages to the names shown.
 	AppNames map[string]string `json:"app_names,omitempty"`
+	// Discord follows Discord's mute and deafen buttons (Integrations tab).
+	Discord bool `json:"discord,omitempty"`
+	// DiscordClientID and DiscordClientSecret replace the Discord
+	// application built into the app; set by hand in config.json, for
+	// builds without one (docs/discord.md).
+	DiscordClientID     string `json:"discord_client_id,omitempty"`
+	DiscordClientSecret string `json:"discord_client_secret,omitempty"`
 }
 
 // Defaults.
@@ -185,3 +192,10 @@ func (c *Config) ProtectPlainKey() (bool, error) {
 	c.KeyPlain = ""
 	return true, nil
 }
+
+// Protect encrypts data for the current Windows user (DPAPI), as the
+// encryption key is stored; other platforms keep it as is.
+func Protect(data []byte) ([]byte, error) { return protect(data) }
+
+// Unprotect reverses Protect.
+func Unprotect(data []byte) ([]byte, error) { return unprotect(data) }

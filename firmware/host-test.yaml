@@ -42,6 +42,14 @@ script:
     then:
       - logger.log: "Doorbell rang"
 
+  - id: show_message
+    then:
+      - logger.log:
+          format: "Message from '%s': '%s'"
+          args:
+            - id(message_pc).c_str()
+            - id(message_text).c_str()
+
 switch:
   # Stand-in for the board's flip_display (no display here), so the PC app's
   # setting can be tested.

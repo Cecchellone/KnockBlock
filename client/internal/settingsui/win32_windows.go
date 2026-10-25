@@ -49,6 +49,8 @@ var (
 	procSendMessageW              = user32.NewProc("SendMessageW")
 	procSetFocus                  = user32.NewProc("SetFocus")
 	procSetForegroundWindow       = user32.NewProc("SetForegroundWindow")
+	procSetTimer                  = user32.NewProc("SetTimer")
+	procKillTimer                 = user32.NewProc("KillTimer")
 	procSetWindowPos              = user32.NewProc("SetWindowPos")
 	procSetWindowTextW            = user32.NewProc("SetWindowTextW")
 	procShowWindow                = user32.NewProc("ShowWindow")
@@ -107,6 +109,7 @@ const (
 	wmSetFont        = 0x0030
 	wmSetIcon        = 0x0080
 	wmCommand        = 0x0111
+	wmTimer          = 0x0113
 	wmCtlColorStatic = 0x0138
 	wmDpiChanged     = 0x02E0
 	wmApp            = 0x8000
@@ -119,9 +122,10 @@ const (
 	emSetLimitText   = 0x00C5
 	emSetCueBanner   = 0x1501
 
-	bnClicked = 0
-	idOK      = 1
-	idCancel  = 2
+	bnClicked    = 0
+	cbnSelChange = 1
+	enKillFocus  = 0x0200
+	idCancel     = 2
 
 	swShow        = 5
 	swRestore     = 9

@@ -285,7 +285,7 @@ func (d *Device) setSlider(ctx context.Context, sl Slider, value int) error {
 }
 
 // Revert puts back the saved values of the sliders previewed since the last
-// Apply: the window was closed without saving.
+// Apply: the window was closed while a slider was being dragged.
 func (d *Device) Revert(ctx context.Context) error {
 	d.mu.Lock()
 	d.dropPending()
