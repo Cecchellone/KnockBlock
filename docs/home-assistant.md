@@ -59,6 +59,72 @@ mode: single
 Other ideas: turn night mode on when the bedroom lights go off, or with a
 "Good night" scene.
 
+## Actions: any status, any message
+
+Two actions show up in Home Assistant as `esphome.knockblock_set_status` and
+`esphome.knockblock_display_message` (Developer tools → Actions, or in an
+automation). Colours are `#RRGGBB` or a name: red, orange, yellow, green,
+cyan, blue, purple, pink, white, black, grey; empty keeps the usual colour.
+
+### `set_status`
+
+A status like one more PC.
+
+| Field | Meaning |
+|-------|---------|
+| `source` | who sets it; shown on the left of the info bar (`~something` shows nothing). Calling again with the same source replaces it |
+| `status` | a status ID: `free`, `muted`, `mic`, `camera`, `call`, `dnd`, `night`; it decides the rank against the PCs and the icons. `offline` removes the source |
+| `label` | text on the display instead of the usual label (empty: the usual one) |
+| `colour` | display and LED colour (empty: the status colour) |
+| `app` | shown in the centre of the info bar |
+| `devices` | icons: `call`, `mic` or `mic_muted`, `camera`, comma-separated (empty: implied by the status) |
+| `duration` | seconds it lasts; `0` until set `offline` |
+
+```yaml
+action: esphome.knockblock_set_status
+data:
+  source: Telefono
+  status: call
+  label: Al telefono
+  colour: orange
+  app: WhatsApp
+  devices: call
+  duration: 0
+```
+
+and to clear it:
+
+```yaml
+action: esphome.knockblock_set_status
+data: {source: Telefono, status: offline, label: "", colour: "", app: "", devices: "", duration: 0}
+```
+
+### `display_message`
+
+A message over the status, with a white bar at the bottom that shrinks as
+its time runs out.
+
+| Field | Meaning |
+|-------|---------|
+| `message` | the text (cut at 120 bytes; up to four lines) |
+| `source` | shown on the left of the info bar |
+| `app` | shown in the centre of the info bar |
+| `colour` | background (empty: the status colour) |
+| `duration` | seconds (at most 300); `0` from the length: 4 s + 0.2 s per character, 5 to 30 s |
+
+```yaml
+action: esphome.knockblock_display_message
+data:
+  message: La cena è pronta!
+  source: Cucina
+  app: ""
+  colour: green
+  duration: 0
+```
+
+Messages from the PC app (the doorbell reply) use the same automatic
+duration.
+
 ## Other entities
 
 - `select.knockblock_status` shows the combined status. Setting it reports a

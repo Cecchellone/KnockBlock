@@ -45,9 +45,12 @@ script:
   - id: show_message
     then:
       - logger.log:
-          format: "Message from '%s': '%s'"
+          format: "Message from '%s' (app '%s', colour %06x, %u ms): '%s'"
           args:
             - id(message_pc).c_str()
+            - id(message_app).c_str()
+            - (unsigned) id(message_color)
+            - (unsigned) id(message_ms)
             - id(message_text).c_str()
 
 switch:

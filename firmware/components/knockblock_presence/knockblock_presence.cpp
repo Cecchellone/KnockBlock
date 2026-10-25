@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
+#include <string>
 
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
@@ -108,6 +110,66 @@ static void copy_name(char *dst, StringRef src) {
   dst[n] = '\0';
 }
 
+// Copies src into dst (size max+1), cut at a UTF-8 character boundary.
+static void copy_cut(char *dst, StringRef src, size_t max) {
+  size_t n = src.size();
+  if (n > max) {
+    n = max;
+    while (n > 0 && (static_cast<uint8_t>(src.c_str()[n]) & 0xC0) == 0x80)
+      n--;
+  }
+  if (n > 0)
+    memcpy(dst, src.c_str(), n);
+  dst[n] = '\0';
+}
+
+uint32_t Presence::parse_color(StringRef text) {
+  std::string s(text.c_str(), text.size());
+  while (!s.empty() && s.back() == ' ')
+    s.pop_back();
+  while (!s.empty() && s.front() == ' ')
+    s.erase(0, 1);
+  for (auto &ch : s)
+    ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+  static const struct {
+    const char *name;
+    uint32_t rgb;
+  } NAMES[] = {
+      {"red", 0xE00000},   {"orange", 0xFF6000}, {"yellow", 0xFFC000}, {"green", 0x00B050},
+      {"cyan", 0x00A0E0},  {"blue", 0x0040E0},   {"purple", 0x8000C0}, {"pink", 0xFF40A0},
+      {"white", 0xFFFFFF}, {"black", 0x000000},  {"grey", 0x303030},   {"gray", 0x303030},
+  };
+  for (const auto &n : NAMES) {
+    if (s == n.name)
+      return n.rgb;
+  }
+  if (!s.empty() && s[0] == '#')
+    s.erase(0, 1);
+  if (s.size() != 6)
+    return NO_COLOR;
+  uint32_t rgb = 0;
+  for (char ch : s) {
+    int v;
+    if (ch >= '0' && ch <= '9')
+      v = ch - '0';
+    else if (ch >= 'a' && ch <= 'f')
+      v = ch - 'a' + 10;
+    else
+      return NO_COLOR;
+    rgb = rgb << 4 | static_cast<uint32_t>(v);
+  }
+  return rgb;
+}
+
+uint32_t Presence::message_duration_ms(const std::string &text) {
+  uint32_t chars = 0;
+  for (unsigned char ch : text) {
+    if ((ch & 0xC0) != 0x80)  // count characters, not UTF-8 bytes
+      chars++;
+  }
+  return std::min<uint32_t>(std::max<uint32_t>(4000 + 200 * chars, 5000), 30000);
+}
+
 void Presence::setup() {
   this->set_interval("expire", 1000, [this]() { this->expire_(); });
   this->publish_();
@@ -148,13 +210,29 @@ void Presence::report(StringRef source, StringRef status, StringRef app, StringR
   this->store_(source, index, app, parse_devices(devices));
 }
 
-void Presence::store_(StringRef source, int index, StringRef app, uint8_t devices) {
+void Presence::report_custom(StringRef source, StringRef status, StringRef app, StringRef devices, StringRef label,
+                             StringRef color, int32_t duration_s) {
+  const int index = status_index(status);
+  if (index < 0) {
+    ESP_LOGW(TAG, "Ignoring unknown status '%.*s'", static_cast<int>(status.size()), status.empty() ? "" : status.c_str());
+    return;
+  }
+  Source *s = this->store_(source, index, app, devices.empty() ? devices_of(index) : parse_devices(devices), false);
+  if (s == nullptr)
+    return;  // offline
+  copy_cut(s->label, label, MAX_LABEL);
+  s->color = parse_color(color);
+  s->lifetime_ms = duration_s <= 0 ? KEEP : static_cast<uint32_t>(duration_s) * 1000;
+  this->publish_();
+}
+
+Presence::Source *Presence::store_(StringRef source, int index, StringRef app, uint8_t devices, bool publish) {
   Source *s = this->find_(source);
   if (index == OFFLINE) {
     if (s != nullptr)
       s->used = false;
     this->publish_();
-    return;
+    return nullptr;
   }
   if (s == nullptr) {
     // Reuse a free slot, or the least recently seen one.
@@ -175,7 +253,14 @@ void Presence::store_(StringRef source, int index, StringRef app, uint8_t device
   s->devices = devices;
   copy_name(s->app, app);
   s->last_seen = millis();
-  this->publish_();
+  // A plain report has the status' own label and colour and the default
+  // lifetime; report_custom sets them after.
+  s->label[0] = '\0';
+  s->color = NO_COLOR;
+  s->lifetime_ms = 0;
+  if (publish)
+    this->publish_();
+  return s;
 }
 
 void Presence::refresh(StringRef source) {
@@ -187,9 +272,9 @@ void Presence::expire_() {
   const uint32_t now = millis();
   bool changed = false;
   for (auto &s : this->sources_) {
-    if (s.used && now - s.last_seen >= this->timeout_ms_) {
-      ESP_LOGW(TAG, "No report from '%s' for %" PRIu32 " ms; dropping it", s.name[0] ? s.name : "manual",
-               this->timeout_ms_);
+    const uint32_t lifetime = s.lifetime_ms == 0 ? this->timeout_ms_ : s.lifetime_ms;
+    if (s.used && lifetime != KEEP && now - s.last_seen >= lifetime) {
+      ESP_LOGW(TAG, "No report from '%s' for %" PRIu32 " ms; dropping it", s.name[0] ? s.name : "manual", lifetime);
       s.used = false;
       changed = true;
     }
@@ -214,6 +299,8 @@ void Presence::publish_() {
   // Sources named "~…" are the light's own switches (night mode, phone
   // call): no PC to show.
   const char *pc = best != nullptr && best->name[0] != '~' ? best->name : "";
+  const char *label = best != nullptr ? best->label : "";
+  const uint32_t color = best != nullptr ? best->color : NO_COLOR;
   // The call timer runs while the source shown is in a call, so a call
   // that goes from muted to camera keeps its start.
   if ((devices & Presence::CALL) == 0)
@@ -221,13 +308,16 @@ void Presence::publish_() {
   else if (this->call_start_ == 0)
     this->call_start_ = std::max<uint32_t>(millis(), 1);
   if (this->published_ && status == this->shown_status_ && devices == this->shown_devices_ &&
-      strcmp(app, this->shown_app_) == 0 && strcmp(pc, this->shown_pc_) == 0)
+      strcmp(app, this->shown_app_) == 0 && strcmp(pc, this->shown_pc_) == 0 &&
+      strcmp(label, this->shown_label_) == 0 && color == this->shown_color_)
     return;
   this->published_ = true;
   this->shown_status_ = status;
   this->shown_devices_ = devices;
   strcpy(this->shown_app_, app);
   strcpy(this->shown_pc_, pc);
+  strcpy(this->shown_label_, label);
+  this->shown_color_ = color;
   // App and PC first: the status select's on_value renders all three.
   this->app_sensor_->publish_state(app);
   this->pc_sensor_->publish_state(pc);

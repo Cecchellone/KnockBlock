@@ -330,7 +330,8 @@ func TestExecuteAction(t *testing.T) {
 		{"missing argument", report, map[string]string{"pc": "a", "status": "free"}},
 		{"unknown argument", report, map[string]string{"pc": "a", "status": "free", "ap": "x"}},
 		{"not an action", Entity{Kind: KindButton, ObjectID: "heartbeat"}, nil},
-		{"non-string argument", Entity{Kind: KindAction, ObjectID: "x", Args: []ActionArg{{Name: "n", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_INT}}}, map[string]string{"n": "1"}},
+		{"int that is not a number", Entity{Kind: KindAction, ObjectID: "x", Args: []ActionArg{{Name: "n", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_INT}}}, map[string]string{"n": "five"}},
+		{"array argument", Entity{Kind: KindAction, ObjectID: "x", Args: []ActionArg{{Name: "n", Type: pb.ServiceArgType_SERVICE_ARG_TYPE_INT_ARRAY}}}, map[string]string{"n": "1"}},
 	}
 	for _, tt := range bad {
 		if err := c.ExecuteAction(ctx, tt.entity, tt.values); err == nil {

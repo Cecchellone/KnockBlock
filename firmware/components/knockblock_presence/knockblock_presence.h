@@ -20,6 +20,10 @@ class Presence : public Component {
   static constexpr size_t MAX_NAME = 32;
   // Sources tracked at once; when full, the least recently seen is dropped.
   static constexpr size_t MAX_SOURCES = 8;
+  // Longest custom label kept, in bytes (set_status from Home Assistant).
+  static constexpr size_t MAX_LABEL = 48;
+  // No custom colour.
+  static constexpr uint32_t NO_COLOR = 0xFFFFFFFF;
 
   void set_status_select(select::Select *s) { this->status_select_ = s; }
   void set_app_sensor(text_sensor::TextSensor *s) { this->app_sensor_ = s; }
@@ -45,8 +49,28 @@ class Presence : public Component {
   // Same, with the devices in use as reported by the PC: a comma-separated
   // list of "call", "mic", "mic_muted" and "camera".
   void report(StringRef source, StringRef status, StringRef app, StringRef devices);
+  // Same, with a custom label and colour for the display ("" and an
+  // unknown colour keep the status' own) and a lifetime: duration_s > 0
+  // keeps the source that many seconds, 0 until it is set `offline`. An
+  // empty devices list takes the devices implied by the status. Used by the
+  // set_status action (Home Assistant).
+  void report_custom(StringRef source, StringRef status, StringRef app, StringRef devices, StringRef label,
+                     StringRef color, int32_t duration_s);
   // Keeps `source` alive without changing it (the heartbeat button).
   void refresh(StringRef source);
+
+  // The custom label of the source shown, "" for the status' own.
+  const char *label() const { return this->shown_label_; }
+  // The custom colour of the source shown (0xRRGGBB), or NO_COLOR.
+  uint32_t color() const { return this->shown_color_; }
+
+  // Parses "#RRGGBB", "RRGGBB" or a colour name (red, orange, yellow,
+  // green, cyan, blue, purple, pink, white, black, grey); NO_COLOR if
+  // empty or unknown.
+  static uint32_t parse_color(StringRef text);
+  // How long a message stays on the display: 4 s plus 0.2 s per
+  // character, between 5 and 30 s.
+  static uint32_t message_duration_ms(const std::string &text);
 
   // The devices in use (Device bits) of the source shown.
   uint8_t devices() const { return this->shown_devices_; }
@@ -61,14 +85,18 @@ class Presence : public Component {
     uint8_t status{0};   // index into STATUSES
     uint8_t devices{0};  // Device bits
     uint32_t last_seen{0};
+    uint32_t lifetime_ms{0};  // 0: the default timeout; KEEP: until offline
+    uint32_t color{NO_COLOR};
     char name[MAX_NAME + 1]{};
     char app[MAX_NAME + 1]{};
+    char label[MAX_LABEL + 1]{};
   };
+  static constexpr uint32_t KEEP = 0xFFFFFFFF;
 
   Source *find_(StringRef name);
   void expire_();
   void publish_();
-  void store_(StringRef source, int index, StringRef app, uint8_t devices);
+  Source *store_(StringRef source, int index, StringRef app, uint8_t devices, bool publish = true);
 
   select::Select *status_select_{nullptr};
   text_sensor::TextSensor *app_sensor_{nullptr};
@@ -82,6 +110,8 @@ class Presence : public Component {
   uint32_t call_start_{0};
   char shown_app_[MAX_NAME + 1]{};
   char shown_pc_[MAX_NAME + 1]{};
+  char shown_label_[MAX_LABEL + 1]{};
+  uint32_t shown_color_{NO_COLOR};
 };
 
 }  // namespace esphome::knockblock_presence

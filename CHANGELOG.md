@@ -37,8 +37,13 @@ changes per minor version.
   docs/home-assistant.md.
 - During a call the info bar shows how long it has lasted (minutes and
   seconds) instead of the time.
-- Messages from a PC (`show_message`) show on the display for 20 s, with a
-  white bar at the bottom that shrinks towards the centre.
+- Messages from a PC (`show_message`) show on the display with a white bar
+  at the bottom that shrinks towards the centre, for 4 s plus 0.2 s per
+  character, between 5 and 30 s.
+- Home Assistant actions `set_status` (any status with your own label,
+  colour, source, app, icons and duration) and `display_message` (a
+  message with source, app, colour and duration). Examples in
+  docs/home-assistant.md.
 - Icons at the bottom of the display show the phone (call open), the
   microphone (on, muted or unused) and the webcam (on or off). PC apps
   report them with the new `report_activity` action; `active_devices`
@@ -48,7 +53,7 @@ changes per minor version.
 
 - The doorbell notification has a reply box when it shows on screen
   (notification mode "text" or "text and sound"): type an answer, press
-  Enter, and it appears on the light for 20 s.
+  Enter, and it appears on the light (5 to 30 s, by its length).
 - Discord's mute and deafen buttons can drive the light: tick Discord in
   the new Integrations tab and allow KnockBlock in the window Discord
   shows (docs/discord.md). Discord keeps the microphone open while muted,
