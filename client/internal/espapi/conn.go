@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -325,9 +326,9 @@ func (c *Conn) PressButton(ctx context.Context, key uint32) error {
 	return c.send(ctx, &pb.ButtonCommandRequest{Key: key})
 }
 
-// ExecuteAction calls a user-defined action with string arguments, given by
-// name. Every argument of the action must be a string and have a value; the
-// device does not answer.
+// ExecuteAction calls a user-defined action, with every argument given by
+// name as text: strings as they are, ints, floats and bools parsed. Array
+// arguments are not supported. The device does not answer.
 func (c *Conn) ExecuteAction(ctx context.Context, action Entity, values map[string]string) error {
 	if action.Kind != KindAction {
 		return fmt.Errorf("espapi: %s %q is not an action", action.Kind, action.ObjectID)
@@ -337,14 +338,34 @@ func (c *Conn) ExecuteAction(ctx context.Context, action Entity, values map[stri
 	}
 	args := make([]*pb.ExecuteServiceArgument, len(action.Args))
 	for i, a := range action.Args {
-		if a.Type != pb.ServiceArgType_SERVICE_ARG_TYPE_STRING {
-			return fmt.Errorf("espapi: action %q: argument %q is %v; only strings are supported", action.ObjectID, a.Name, a.Type)
-		}
 		v, ok := values[a.Name]
 		if !ok {
 			return fmt.Errorf("espapi: action %q: missing argument %q", action.ObjectID, a.Name)
 		}
-		args[i] = &pb.ExecuteServiceArgument{String_: v}
+		arg := &pb.ExecuteServiceArgument{}
+		var err error
+		switch a.Type {
+		case pb.ServiceArgType_SERVICE_ARG_TYPE_STRING:
+			arg.String_ = v
+		case pb.ServiceArgType_SERVICE_ARG_TYPE_INT:
+			// API 1.3 and later read int_ (aioesphomeapi/client.py,
+			// execute_service).
+			var n int64
+			n, err = strconv.ParseInt(v, 10, 32)
+			arg.Int_ = int32(n)
+		case pb.ServiceArgType_SERVICE_ARG_TYPE_FLOAT:
+			var f float64
+			f, err = strconv.ParseFloat(v, 32)
+			arg.Float_ = float32(f)
+		case pb.ServiceArgType_SERVICE_ARG_TYPE_BOOL:
+			arg.Bool_, err = strconv.ParseBool(v)
+		default:
+			return fmt.Errorf("espapi: action %q: argument %q is %v, not supported", action.ObjectID, a.Name, a.Type)
+		}
+		if err != nil {
+			return fmt.Errorf("espapi: action %q: argument %q: %w", action.ObjectID, a.Name, err)
+		}
+		args[i] = arg
 	}
 	return c.send(ctx, &pb.ExecuteServiceRequest{Key: action.Key, Args: args})
 }

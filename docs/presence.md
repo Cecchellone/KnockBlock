@@ -45,7 +45,9 @@ table of up to 8 **sources**:
 | `privacy_mode` | switch (board only) | hides app and PC **on the display**; Home Assistant still sees them |
 | `report_presence` | API action | arguments `pc`, `status`, `app` (all strings) |
 | `report_activity` | API action | `pc`, `status`, `app`, `devices` (all strings); used by the PC app when the firmware has it |
-| `show_message` | API action | `pc`, `message`: shows the message on the display for 20 s (cut at 120 bytes) |
+| `show_message` | API action | `pc`, `message`: shows the message on the display for 5 to 30 s depending on its length (cut at 120 bytes) |
+| `display_message` | API action | message with source, app, colour and duration, for Home Assistant (`docs/home-assistant.md`) |
+| `set_status` | API action | a status with custom label, colour, source, app, devices and duration, for Home Assistant |
 
 ### Devices in use
 
@@ -75,7 +77,7 @@ crossed out and lit when muted, crossed out and dimmed when unused) and the
 camera (lit while it streams, crossed out and dimmed otherwise).
 
 A message from a PC (`show_message`, e.g. the reply typed in the doorbell
-notification) replaces the status for 20 s: the PC that sent it in the
+notification) replaces the status for 5 to 30 s (4 s plus 0.2 s per character): the PC that sent it in the
 info bar (hidden in privacy mode), the text in the middle, wrapped on up to
 four lines, and a white bar at the bottom that shrinks towards the centre
 as the time runs out. A new message starts over; the doorbell bell takes

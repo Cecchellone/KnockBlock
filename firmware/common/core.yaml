@@ -13,8 +13,9 @@
 # - `show_doorbell` shows that the doorbell rang (display and LED on the
 #   board, a log line on the host). The `doorbell` event has already been
 #   sent to the PC apps and Home Assistant when it runs.
-# - `show_message` shows `message_text`, sent by `message_pc`, for
-#   ${message_duration_ms} ms (the board's display, a log line on the host).
+# - `show_message` shows `message_text`, sent by `message_pc` (with
+#   `message_app`), for `message_ms` ms on `message_color` (NO_COLOR: the
+#   status colour) (the board's display, a log line on the host).
 
 substitutions:
   # A source (a PC, or the manual source) that sends nothing for this long
@@ -24,8 +25,6 @@ substitutions:
   # Rings closer together than this count as one, so a held or bouncing
   # button does not flood the PCs with notifications.
   doorbell_cooldown_ms: "3000"
-  # How long a message from a PC (show_message) stays on the display.
-  message_duration_ms: "20000"
   # The Phone call switch turns itself off after this long.
   phone_call_max: 4h
 
@@ -51,11 +50,20 @@ globals:
     type: uint32_t
     initial_value: "0"
 
-  # The last message from a PC (show_message) and who sent it.
+  # The last message (show_message, display_message), who sent it, its
+  # background colour and how long it stays.
   - id: message_text
     type: std::string
   - id: message_pc
     type: std::string
+  - id: message_app
+    type: std::string
+  - id: message_color
+    type: uint32_t
+    initial_value: "0xFFFFFFFF"  # Presence::NO_COLOR: the status colour
+  - id: message_ms
+    type: uint32_t
+    initial_value: "5000"
 
 api:
   actions:
@@ -83,8 +91,9 @@ api:
         - lambda: 'id(presence).report(pc, status, app, devices);'
 
     # A short message from a PC (e.g. the answer typed in the doorbell
-    # notification), shown on the display for ${message_duration_ms} ms.
-    # Longer messages are cut at 120 bytes, at a UTF-8 character boundary.
+    # notification). It stays on the display 4 s plus 0.2 s per character,
+    # between 5 and 30 s. Longer messages are cut at 120 bytes, at a UTF-8
+    # character boundary.
     - action: show_message
       variables:
         pc: string
@@ -96,7 +105,56 @@ api:
               n--;
             id(message_text) = message.substr(0, n);
             id(message_pc) = pc.substr(0, 32);
+            id(message_app) = "";
+            id(message_color) = knockblock_presence::Presence::NO_COLOR;
+            id(message_ms) = knockblock_presence::Presence::message_duration_ms(id(message_text));
         - script.execute: show_message
+
+    # The same from Home Assistant, with every detail: who sends it
+    # (`source`, shown left in the info bar) and `app` (centre), the
+    # background `colour` ("#RRGGBB" or a name such as red, blue; empty: the
+    # status colour) and `duration` in seconds (0: from the length, 5 to 30
+    # s; at most 300).
+    - action: display_message
+      variables:
+        message: string
+        source: string
+        app: string
+        colour: string
+        duration: int
+      then:
+        - lambda: |-
+            size_t n = std::min<size_t>(message.size(), 120);
+            while (n > 0 && n < message.size() && (static_cast<uint8_t>(message[n]) & 0xC0) == 0x80)
+              n--;
+            id(message_text) = message.substr(0, n);
+            id(message_pc) = source.substr(0, 32);
+            id(message_app) = app.substr(0, 32);
+            id(message_color) = knockblock_presence::Presence::parse_color(colour);
+            id(message_ms) = duration > 0
+                ? static_cast<uint32_t>(std::min<int32_t>(duration, 300)) * 1000
+                : knockblock_presence::Presence::message_duration_ms(id(message_text));
+        - script.execute: show_message
+
+    # A status from Home Assistant, like one more PC: `source` names it
+    # (and shows left in the info bar; "~…" hides it), `status` is a status
+    # ID (it decides the rank, the icons and, unless given, label and
+    # colour; `offline` removes the source), `label` replaces the text on
+    # the display, `colour` the colour ("#RRGGBB" or a name), `app` shows in
+    # the centre of the info bar, `devices` lists call, mic, mic_muted,
+    # camera (empty: implied by the status), and `duration` in seconds keeps
+    # it that long (0: until set `offline`).
+    - action: set_status
+      variables:
+        source: string
+        status: string
+        label: string
+        colour: string
+        app: string
+        devices: string
+        duration: int
+      then:
+        - lambda: 'id(presence).report_custom(source, status, app, devices, label, colour, duration);'
 
 select:
   # The combined status, as language-neutral IDs; the display label is
@@ -243,6 +301,9 @@ script:
       - text_sensor.template.publish:
           id: status_label
           state: !lambda |-
+            // A custom label (set_status) replaces the localized one.
+            if (id(presence).label()[0] != '\0')
+              return std::string(id(presence).label());
             return id(labels).get(id(display_language).current_option(),
                                   id(status).current_option());
       - script.execute: apply_status

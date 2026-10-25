@@ -186,12 +186,21 @@ display:
       int x1, y1, w, h;
 
       if (const uint32_t since = id(message_since); since != 0) {
-        // A message from a PC: who sent it at the top, the text in the
+        // A message: who sent it (and the app) at the top, the text in the
         // middle (words wrapped, at most four lines), and at the bottom a
         // white bar that shrinks towards the centre as its time runs out.
-        it.filled_rectangle(0, 0, W, bar, Color(bg.r * 3 / 4, bg.g * 3 / 4, bg.b * 3 / 4));
-        if (!id(privacy_mode).state)
-          it.print(6, bar / 2, id(font_detail), fg, TextAlign::CENTER_LEFT, id(message_pc).c_str());
+        // A message colour replaces the status colour.
+        Color mbg = bg, mfg = fg;
+        if (const uint32_t rgb = id(message_color); rgb != knockblock_presence::Presence::NO_COLOR) {
+          mbg = Color(rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF);
+          mfg = (299 * mbg.r + 587 * mbg.g + 114 * mbg.b) / 1000 > 150 ? Color::BLACK : Color::WHITE;
+          it.fill(mbg);
+        }
+        it.filled_rectangle(0, 0, W, bar, Color(mbg.r * 3 / 4, mbg.g * 3 / 4, mbg.b * 3 / 4));
+        if (!id(privacy_mode).state) {
+          it.print(6, bar / 2, id(font_detail), mfg, TextAlign::CENTER_LEFT, id(message_pc).c_str());
+          it.print(W / 2, bar / 2, id(font_detail), mfg, TextAlign::CENTER, id(message_app).c_str());
+        }
         std::vector<std::string> lines;
         std::string line, word;
         const std::string &msg = id(message_text);
@@ -221,9 +230,10 @@ display:
           lines.resize(4);
         const int lh = 30, top = bar + (H - bar - 8 - lh * (int) lines.size()) / 2;
         for (size_t i = 0; i < lines.size(); i++)
-          it.print(W / 2, top + lh * i + lh / 2, id(font_message), fg, TextAlign::CENTER, lines[i].c_str());
+          it.print(W / 2, top + lh * i + lh / 2, id(font_message), mfg, TextAlign::CENTER, lines[i].c_str());
         const uint32_t elapsed = millis() - since;
-        const int left = elapsed >= ${message_duration_ms} ? 0 : (int) ((uint64_t) W * (${message_duration_ms} - elapsed) / ${message_duration_ms});
+        const uint32_t total = id(message_ms);
+        const int left = elapsed >= total ? 0 : (int) ((uint64_t) W * (total - elapsed) / total);
         it.filled_rectangle((W - left) / 2, H - 6, left, 6, Color::WHITE);
         return;
       }
@@ -427,6 +437,7 @@ script:
       - lambda: |-
           const auto st = id(status).current_option();
           Color c = id(color_offline);
+          const uint32_t custom = id(presence).color();
           if (st == "free") c = id(color_free);
           else if (st == "muted") c = id(color_muted);
           else if (st == "mic") c = id(color_mic);
@@ -434,6 +445,9 @@ script:
           else if (st == "call") c = id(color_call);
           else if (st == "dnd") c = id(color_dnd);
           else if (st == "night") c = id(color_night);
+          // A custom colour (set_status) replaces the status colour.
+          if (custom != knockblock_presence::Presence::NO_COLOR)
+            c = Color(custom >> 16 & 0xFF, custom >> 8 & 0xFF, custom & 0xFF);
           id(current_color) = c;
       - if:
           condition:
@@ -478,13 +492,13 @@ script:
       - lambda: id(doorbell_shown) = false;
       - script.execute: apply_status
 
-  # Shows a message from a PC for ${message_duration_ms} ms (a new one
-  # starts over), then goes back to the status.
+  # Shows a message for message_ms (a new one starts over), then goes back
+  # to the status.
   - id: show_message
     mode: restart
     then:
       - lambda: id(message_since) = std::max<uint32_t>(millis(), 1);
       - component.update: main_display
-      - delay: ${message_duration_ms}ms
+      - delay: !lambda 'return id(message_ms);'
       - lambda: id(message_since) = 0;
       - component.update: main_display

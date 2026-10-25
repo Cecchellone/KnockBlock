@@ -9,6 +9,8 @@
 //	knockctl [flags] lang <code>        set the display language (en, it, ...)
 //	knockctl [flags] heartbeat          press the heartbeat button
 //	knockctl [flags] switch <id> on|off turn a switch on or off (night_mode, phone_call, ...)
+//	knockctl [flags] action <name> [arg=value ...]
+//	                                    call an action (set_status, display_message, ...)
 //	knockctl [flags] report <pc> <status> [app]
 //	                                    report a PC's status, as the tray app does
 //	knockctl detect                     list the Windows consent store entries, the audio
@@ -30,9 +32,11 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/espapi"
+	"github.com/Cecchellone/KnockBlock/client/internal/espapi/pb"
 	"github.com/Cecchellone/KnockBlock/client/internal/memdebug"
 )
 
@@ -59,7 +63,7 @@ func run() error {
 	interval := flag.Duration("interval", time.Second, "agent: detection poll interval")
 	fakeDetect := flag.String("fake-detect", "", "agent: read apps in use from this file instead of the registry (lines: mic|camera <exe or package>)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|ring|flip on|off|switch <id> on|off|report <pc> <status> [app]|detect|agent\n\nflags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: knockctl [flags] list|watch|status <id>|lang <code>|heartbeat|ring|flip on|off|switch <id> on|off|action <name> [arg=value ...]|report <pc> <status> [app]|detect|agent\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -159,6 +163,28 @@ func run() error {
 			return errors.New("device has no flip_display switch")
 		}
 		return conn.SetSwitch(cmdCtx, e.Key, args[1] == "on")
+	case "action":
+		if len(args) < 2 {
+			return errors.New("usage: knockctl action <name> [arg=value ...]")
+		}
+		e, ok := ents.Find(espapi.KindAction, args[1])
+		if !ok {
+			return fmt.Errorf("device has no %s action", args[1])
+		}
+		values := map[string]string{}
+		for _, kv := range args[2:] {
+			k, v, ok := strings.Cut(kv, "=")
+			if !ok {
+				return fmt.Errorf("want arg=value, got %q", kv)
+			}
+			values[k] = v
+		}
+		for _, a := range e.Args { // missing arguments are empty (0 for numbers)
+			if _, ok := values[a.Name]; !ok {
+				values[a.Name] = map[bool]string{true: "", false: "0"}[a.Type == pb.ServiceArgType_SERVICE_ARG_TYPE_STRING]
+			}
+		}
+		return conn.ExecuteAction(cmdCtx, e, values)
 	case "switch":
 		if len(args) != 3 || (args[2] != "on" && args[2] != "off") {
 			return errors.New("usage: knockctl switch <id> on|off (e.g. night_mode, phone_call)")
