@@ -26,6 +26,7 @@ From then on, the light follows your microphone and webcam. Several PCs can driv
 | `camera` | Webcam is on                     |
 | `call`   | In a call — please don't knock   |
 | `dnd`    | Do not disturb (manual)          |
+| `night`  | Sleeping (Night mode switch, e.g. from Home Assistant) |
 | `offline`| The PC is off or unreachable     |
 
 ## Goals

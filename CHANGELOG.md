@@ -29,6 +29,12 @@ changes per minor version.
 - `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
 - New status `muted` (blue): in a call with the microphone muted and the
   webcam off. It ranks below `dnd`.
+- `Night mode` switch: the light says "Sleeping" on a dark blue, dimmed,
+  until turned off; status `night`, above `dnd`, below a PC in a call.
+- `Phone call` switch for Home Assistant automations (e.g. the Android
+  companion app's phone state): "In a call" with the phone icon and the
+  duration; it turns itself off after 4 hours. Examples in
+  docs/home-assistant.md.
 - During a call the info bar shows how long it has lasted (minutes and
   seconds) instead of the time.
 - Messages from a PC (`show_message`) show on the display for 20 s, with a

@@ -15,14 +15,15 @@ table of up to 8 **sources**:
 |--------|-------------|---------------|
 | A PC (identified by its name) | the tray app, via the API action `report_activity(pc, status, app, devices)` (or `report_presence(pc, status, app)` on older apps) | the next report |
 | `manual` (no name) | anyone setting the `status` select directly: Home Assistant, `knockctl status` | the `heartbeat` button |
+| `~night`, `~phone` | the `Night mode` and `Phone call` switches (Home Assistant, `docs/home-assistant.md`) | the firmware itself, every 30 s while the switch is on; no PC name is shown |
 
 - A source that sends nothing for `watchdog_timeout` (120 s on the board) is
   dropped. A PC that shuts down or loses the network therefore cannot leave
   the light on "call" (CLAUDE.md §4).
 - Reporting `offline` drops the source at once, for example on a clean
   shutdown. An unknown status is ignored and logged.
-- **The strongest live status wins:** `call` > `camera` > `mic` > `dnd` >
-  `muted` > `free`. On a tie, the most recent report wins. With no live source the
+- **The strongest live status wins:** `call` > `camera` > `mic` > `night` >
+  `dnd` > `muted` > `free`. On a tie, the most recent report wins. With no live source the
   status is `offline`.
 - The `status` select always shows the combined status. `active_app` and
   `active_pc` show the app and PC of the winning source; both are empty for

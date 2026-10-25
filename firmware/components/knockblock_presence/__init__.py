@@ -7,7 +7,7 @@ know them, the devices in use (call, microphone, camera) for the icons on
 the display. Sources expire after
 `timeout` without a new report, so a PC that shuts down cannot leave the
 light on "call". The light shows the strongest live status
-(call > camera > mic > dnd > muted > free), with the app and PC of the source that
+(call > camera > mic > night > dnd > muted > free), with the app and PC of the source that
 causes it; with no live source it shows `offline`.
 """
 

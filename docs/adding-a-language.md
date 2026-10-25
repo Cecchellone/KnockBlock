@@ -11,7 +11,7 @@ file name of each locale file.
 
 1. Copy `firmware/locales/en.yaml` to `firmware/locales/<code>.yaml` and
    translate the values. Keep the keys: they are status IDs (`free`, `muted`,
-   `mic`, `camera`, `call`, `dnd`, `offline`). Labels are shown in a large font on a
+   `mic`, `camera`, `call`, `dnd`, `night`, `offline`). Labels are shown in a large font on a
    320×172 display; keep them short (two lines at most, split at a space).
 2. Add `<code>` to the `options` of the `display_language` select in
    `firmware/common/core.yaml`.
