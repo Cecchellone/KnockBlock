@@ -21,6 +21,7 @@ From then on, the light follows your microphone and webcam. Several PCs can driv
 | Status   | Meaning                          |
 |----------|----------------------------------|
 | `free`   | Come in                          |
+| `away`   | Not at the PC (locked or idle); the screen rests: black with a small dot |
 | `muted`  | In a call, microphone muted and webcam off |
 | `mic`    | Microphone is on                 |
 | `camera` | Webcam is on                     |

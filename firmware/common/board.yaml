@@ -72,6 +72,9 @@ color:
     hex: E00000
   - id: color_dnd
     hex: 8000C0
+  # Away from the PC (locked or idle): shown on the resting screen.
+  - id: color_away
+    hex: 607080
   # Night mode: a dark blue, with dimmed text and LED.
   - id: color_night
     hex: 0A1440
@@ -128,6 +131,15 @@ font:
     size: 26
     glyphsets: [GF_Latin_Kernel]
     glyphs: ["àèéìòùÀÈÉÌÒÙ·"]
+
+  # The call duration in the info bar, bold so it stands out from the clock.
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 900
+    id: font_timer
+    size: 20
+    glyphs: ["0123456789:"]
 
   # The icons at the bottom: phone, microphone and camera, on and off, from
   # Material Design Icons (Pictogrammers, Apache License 2.0), pinned to a
@@ -238,6 +250,15 @@ display:
         return;
       }
 
+      // Resting screen: nobody at a PC (offline, or away: locked or idle).
+      // Black, with only a small dot in the status colour, so the light
+      // does not glow in the hallway.
+      if (const auto &st = id(status).current_option(); st == "offline" || st == "away") {
+        it.fill(Color::BLACK);
+        it.filled_circle(W / 2, H / 2, 6, st == "away" ? id(color_away) : Color(0x50, 0x50, 0x50));
+        return;
+      }
+
       // Info bar at the top, slightly darker: the PC on the left, the app in
       // the middle (both hidden in privacy mode, and empty when the status
       // has no source), and on the right how long the call has lasted, else
@@ -255,17 +276,28 @@ display:
       };
       char right[16] = "";
       if (const uint32_t start = id(presence).call_start(); start != 0) {
+        // The call duration, bold in a pill: red, or white on a red screen,
+        // so it is not mistaken for the clock.
         const unsigned s = (millis() - start) / 1000;
         if (s >= 3600)
           snprintf(right, sizeof(right), "%u:%02u:%02u", s / 3600, s / 60 % 60, s % 60);
         else
           snprintf(right, sizeof(right), "%u:%02u", s / 60, s % 60);
+        const bool red_screen = bg.r > 150 && bg.g < 80 && bg.b < 80;
+        const Color pill = red_screen ? Color::WHITE : Color(0xE0, 0x00, 0x00);
+        const Color ink = red_screen ? Color(0xE0, 0x00, 0x00) : Color::WHITE;
+        it.get_text_bounds(0, 0, right, id(font_timer), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+        const int px = W - 4 - w - 12, ph = bar - 6;
+        it.filled_rectangle(px + ph / 2, 3, w + 12 - ph, ph, pill);
+        it.filled_circle(px + ph / 2, 3 + ph / 2, ph / 2, pill);
+        it.filled_circle(px + w + 12 - ph / 2 - 1, 3 + ph / 2, ph / 2, pill);
+        it.print(W - 10, bar / 2, id(font_timer), ink, TextAlign::CENTER_RIGHT, right);
       } else {
         auto now = id(sntp_time).now();
         if (now.is_valid())
           now.strftime(right, sizeof(right), "%H:%M");
+        it.print(W - 6, bar / 2, id(font_detail), fg, TextAlign::CENTER_RIGHT, right);
       }
-      it.print(W - 6, bar / 2, id(font_detail), fg, TextAlign::CENTER_RIGHT, right);
       if (!id(privacy_mode).state) {
         it.print(6, bar / 2, id(font_detail), fg, TextAlign::CENTER_LEFT, fit(id(active_pc).state, 92).c_str());
         it.print(W / 2, bar / 2, id(font_detail), fg, TextAlign::CENTER, fit(id(active_app).state, 120).c_str());
@@ -445,6 +477,7 @@ script:
           else if (st == "call") c = id(color_call);
           else if (st == "dnd") c = id(color_dnd);
           else if (st == "night") c = id(color_night);
+          else if (st == "away") c = id(color_away);
           // A custom colour (set_status) replaces the status colour.
           if (custom != knockblock_presence::Presence::NO_COLOR)
             c = Color(custom >> 16 & 0xFF, custom >> 8 & 0xFF, custom & 0xFF);
@@ -457,10 +490,11 @@ script:
           else:
             - light.turn_on:
                 id: status_led
-                # Night mode keeps the LED faint.
+                # Night mode and away keep the LED faint.
                 brightness: !lambda |-
                   const float b = id(led_brightness).state / 100.0f;
-                  return id(status).current_option() == "night" ? std::min(b, 0.1f) : b;
+                  const auto &st = id(status).current_option();
+                  return st == "night" || st == "away" ? std::min(b, 0.1f) : b;
                 red: !lambda 'return id(current_color).r / 255.0f;'
                 green: !lambda 'return id(current_color).g / 255.0f;'
                 blue: !lambda 'return id(current_color).b / 255.0f;'

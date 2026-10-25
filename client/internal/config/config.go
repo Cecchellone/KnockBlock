@@ -45,8 +45,12 @@ type Config struct {
 	Ignore []string `json:"ignore,omitempty"`
 	// AppNames maps executables or packages to the names shown.
 	AppNames map[string]string `json:"app_names,omitempty"`
+	// AwayOff stops reporting "away" when the PC is locked or idle.
+	AwayOff bool `json:"away_off,omitempty"`
 	// Discord follows Discord's mute and deafen buttons (Integrations tab).
 	Discord bool `json:"discord,omitempty"`
+	// Teams follows the Teams mute button (Integrations tab).
+	Teams bool `json:"teams,omitempty"`
 	// DiscordClientID and DiscordClientSecret replace the Discord
 	// application built into the app; set by hand in config.json, for
 	// builds without one (docs/discord.md).

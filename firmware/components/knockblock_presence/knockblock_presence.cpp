@@ -15,12 +15,12 @@ static const char *const TAG = "knockblock_presence";
 
 // Status IDs from weakest to strongest; index 0 (offline) means "no live
 // source". Keep in sync with the `status` select options in common/core.yaml.
-static const char *const STATUSES[] = {"offline", "free", "muted", "dnd", "night", "mic", "camera", "call"};
+static const char *const STATUSES[] = {"offline", "away", "free", "muted", "dnd", "night", "mic", "camera", "call"};
 static constexpr uint8_t OFFLINE = 0;
 static constexpr uint8_t NUM_STATUSES = sizeof(STATUSES) / sizeof(STATUSES[0]);
 
 // Indices of STATUSES, for the devices implied by a status.
-static constexpr int S_MUTED = 2, S_MIC = 5, S_CAMERA = 6, S_CALL = 7;
+static constexpr int S_MUTED = 3, S_MIC = 6, S_CAMERA = 7, S_CALL = 8;
 
 // Devices implied by a status, for reports that do not list them (old PC
 // apps, the manual source).
