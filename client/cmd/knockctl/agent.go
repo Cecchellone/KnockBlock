@@ -13,6 +13,7 @@ import (
 	"github.com/Cecchellone/KnockBlock/client/internal/detect"
 	"github.com/Cecchellone/KnockBlock/client/internal/espapi"
 	"github.com/Cecchellone/KnockBlock/client/internal/link"
+	"github.com/Cecchellone/KnockBlock/client/internal/status"
 )
 
 type agentFlags struct {
@@ -78,7 +79,8 @@ func agentCmd(ctx context.Context, log *slog.Logger, dial espapi.Options, f agen
 	return nil
 }
 
-// detectCmd prints every consent store entry (Windows only).
+// detectCmd prints every consent store entry, the audio sessions and the
+// camera streams (Windows only).
 func detectCmd() error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "DEVICE\tIN USE\tKIND\tSTART\tSTOP\tKEY")
@@ -102,19 +104,102 @@ func detectCmd() error {
 
 	// The microphone comes from the audio sessions: who records right now.
 	fmt.Println()
-	fmt.Fprintln(tw, "AUDIO SESSIONS (microphone)\t\t\t")
-	fmt.Fprintln(tw, "PID\tRECORDING\tEXE\tPATH")
-	err = detect.DumpAudioSessions(func(pid uint32, exe, path string, active bool) {
-		recording := ""
-		if active {
-			recording = "YES"
+	fmt.Fprintln(tw, "AUDIO SESSIONS\t\t\t\t\t\t")
+	fmt.Fprintln(tw, "PID\tKIND\tACTIVE\tMUTED\tPEAK\tEXE\tPATH")
+	err = detect.DumpAudioSessions(func(s detect.AudioSession) {
+		kind := "playback"
+		if s.Capture {
+			kind = "record"
 		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n", pid, recording, exe, path)
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%.3f\t%s\t%s\n", s.PID, kind, yes(s.Active), yes(s.Muted), s.Peak, s.Exe, s.Path)
 	})
 	if err != nil {
 		return fmt.Errorf("audio sessions: %w", err)
 	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+
+	// The camera comes from Media Foundation's camera reports.
+	fmt.Println()
+	fmt.Fprintln(tw, "CAMERA STREAMS\t\t")
+	fmt.Fprintln(tw, "PID\tEXE\tPATH")
+	err = detect.DumpCameraStreams(func() { time.Sleep(1500 * time.Millisecond) }, func(pid uint32, exe, path string) {
+		fmt.Fprintf(tw, "%d\t%s\t%s\n", pid, exe, path)
+	})
+	if err != nil {
+		return fmt.Errorf("camera streams: %w", err)
+	}
 	return tw.Flush()
+}
+
+// detectLiveCmd prints what the detector sees and the resulting status
+// every interval until ctx is done, with the audio sessions of the apps in
+// use: to check by hand how an app behaves when muted or with the camera
+// off.
+func detectLiveCmd(ctx context.Context, interval time.Duration) error {
+	det, err := detect.NewConsentStore(detect.Options{})
+	if err != nil {
+		return err
+	}
+	defer det.Close()
+	var snap detect.Snapshot
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		if err := det.Poll(&snap); err != nil {
+			return err
+		}
+		res := status.Compute(&snap, status.Auto, true)
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s  %-7s %-14q mic:", time.Now().Format("15:04:05"), res.Status, res.App)
+		for _, a := range snap.Mic {
+			fmt.Fprintf(&b, " %s", a.Name)
+			if a.Muted {
+				b.WriteString("(muted)")
+			}
+		}
+		b.WriteString("  camera:")
+		for _, a := range snap.Camera {
+			fmt.Fprintf(&b, " %s", a.Name)
+		}
+		b.WriteString("  sessions:")
+		err := detect.DumpAudioSessions(func(s detect.AudioSession) {
+			if s.Exe == "" || (!s.Active && !s.Capture) {
+				return
+			}
+			kind := "play"
+			if s.Capture {
+				kind = "rec"
+			}
+			fmt.Fprintf(&b, " %s/%s", strings.TrimSuffix(s.Exe, ".exe"), kind)
+			if !s.Active {
+				b.WriteString("(idle)")
+			}
+			if s.Muted {
+				b.WriteString("(muted)")
+			}
+			if s.Peak >= 0 {
+				fmt.Fprintf(&b, "%.2f", s.Peak)
+			}
+		})
+		if err != nil {
+			fmt.Fprintf(&b, " error: %v", err)
+		}
+		fmt.Println(b.String())
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+		}
+	}
+}
+
+func yes(b bool) string {
+	if b {
+		return "YES"
+	}
+	return ""
 }
 
 // filetime formats a Windows FILETIME (100 ns since 1601) as local time.

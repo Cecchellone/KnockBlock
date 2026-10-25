@@ -21,6 +21,7 @@ From then on, the light follows your microphone and webcam. Several PCs can driv
 | Status   | Meaning                          |
 |----------|----------------------------------|
 | `free`   | Come in                          |
+| `muted`  | In a call, microphone muted and webcam off |
 | `mic`    | Microphone is on                 |
 | `camera` | Webcam is on                     |
 | `call`   | In a call — please don't knock   |

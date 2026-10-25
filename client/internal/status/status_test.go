@@ -12,6 +12,8 @@ var (
 	discord = detect.App{Name: "Discord", Known: true}
 	obs     = detect.App{Name: "OBS", Known: true}
 	unknown = detect.App{Name: "Arecorder"} // sorts before known names
+	mutedDC = detect.App{Name: "Discord", Known: true, Muted: true}
+	mutedTm = detect.App{Name: "Teams", Known: true, Muted: true}
 )
 
 func TestCompute(t *testing.T) {
@@ -29,6 +31,10 @@ func TestCompute(t *testing.T) {
 		{"known app before unknown", []detect.App{unknown, discord}, nil, Auto, true, Result{Mic, "Discord"}},
 		{"only unknown apps", []detect.App{unknown}, nil, Auto, true, Result{Mic, "Arecorder"}},
 		{"app names off", []detect.App{discord}, []detect.App{teams}, Auto, false, Result{Call, ""}},
+		{"muted call", []detect.App{mutedDC}, nil, Auto, true, Result{Muted, "Discord"}},
+		{"muted mic, camera on", []detect.App{mutedDC}, []detect.App{discord}, Auto, true, Result{Camera, "Discord"}},
+		{"one app muted, one live", []detect.App{mutedDC, teams}, nil, Auto, true, Result{Mic, "Teams"}},
+		{"live unknown before muted known", []detect.App{unknown, mutedTm}, nil, Auto, true, Result{Mic, "Arecorder"}},
 		{"override dnd", []detect.App{discord}, nil, ForceDND, true, Result{DND, ""}},
 		{"override free in a call", []detect.App{discord}, []detect.App{teams}, ForceFree, true, Result{Free, ""}},
 	}

@@ -1,6 +1,7 @@
 {
   "app.name": "KnockBlock",
   "status.free": "Libero",
+  "status.muted": "In chiamata, muto",
   "status.mic": "Microfono acceso",
   "status.camera": "Webcam accesa",
   "status.call": "In chiamata",

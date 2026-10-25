@@ -10,6 +10,7 @@ import (
 // identifiers, not text: the tray and the display localize them.
 const (
 	Free    = "free"
+	Muted   = "muted" // in a call with the microphone muted and no camera
 	Mic     = "mic"
 	Camera  = "camera"
 	Call    = "call"
@@ -34,7 +35,8 @@ type Result struct {
 }
 
 // Compute derives this PC's status from what is in use (CLAUDE.md §5.3):
-// microphone and camera → call, camera → camera, microphone → mic,
+// microphone and camera → call, camera → camera, microphone → mic, a
+// microphone kept open but muted (a call with everything off) → muted,
 // nothing → free. A manual override wins. The app is the one using the
 // camera if any, else the microphone; among several, a known app first,
 // then by name, so the choice is stable between polls. With sendApps false
@@ -46,7 +48,10 @@ func Compute(s *detect.Snapshot, o Override, sendApps bool) Result {
 	case ForceDND:
 		return Result{Status: DND}
 	}
-	mic, cam := len(s.Mic) > 0, len(s.Camera) > 0
+	mic, cam := false, len(s.Camera) > 0
+	for _, a := range s.Mic {
+		mic = mic || !a.Muted
+	}
 	var r Result
 	switch {
 	case mic && cam:
@@ -55,29 +60,39 @@ func Compute(s *detect.Snapshot, o Override, sendApps bool) Result {
 		r.Status = Camera
 	case mic:
 		r.Status = Mic
+	case len(s.Mic) > 0:
+		r.Status = Muted
 	default:
 		return Result{Status: Free}
 	}
 	if sendApps {
 		if cam {
-			r.App = pick(s.Camera)
+			r.App = pick(s.Camera, false)
 		} else {
-			r.App = pick(s.Mic)
+			r.App = pick(s.Mic, mic)
 		}
 	}
 	return r
 }
 
-// pick chooses the app to show among those using a device. apps is sorted
-// by name (detect.Snapshot), so the first known app, else the first app,
-// is stable.
-func pick(apps []detect.App) string {
+// pick chooses the app to show among those using a device, only among the
+// unmuted ones when live is true. apps is sorted by name
+// (detect.Snapshot), so the first known app, else the first app, is
+// stable.
+func pick(apps []detect.App, live bool) string {
+	first := ""
 	for _, a := range apps {
+		if live && a.Muted {
+			continue
+		}
 		if a.Known {
 			return a.Name
 		}
+		if first == "" {
+			first = a.Name
+		}
 	}
-	return apps[0].Name
+	return first
 }
 
 // HeartbeatInterval is how often an unchanged status is sent again: well

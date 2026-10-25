@@ -35,6 +35,11 @@ type App struct {
 	Name string
 	// Known is true when Name comes from the built-in table or an override.
 	Known bool
+	// Muted is true for a microphone app whose recording is muted in
+	// Windows: its audio session, or the recording device it uses. An app
+	// that keeps recording while muted inside a call is in a call with the
+	// microphone off.
+	Muted bool
 }
 
 // Snapshot lists the apps using each device. Detector.Poll reuses its
@@ -103,9 +108,22 @@ type processes interface {
 // audio sessions (WASAPI). Unlike the consent store, a session ends when the
 // program stops recording or exits, so it reflects real microphone use.
 type captureSessions interface {
-	// capture calls fn with the process ID and state of every capture
-	// session, except the system sounds session.
-	capture(fn func(pid uint32, active bool)) error
+	// capture calls fn with every capture session, except the system
+	// sounds session.
+	capture(fn func(s audioSession)) error
+	close() error
+}
+
+// audioSession is one program's audio session on one device.
+type audioSession struct {
+	pid    uint32
+	active bool // recording now
+	muted  bool // the session, or its device, is muted in Windows
+}
+
+// cameraStreams lists the programs streaming from a camera now.
+type cameraStreams interface {
+	streams(fn func(pid uint32)) error
 	close() error
 }
 
@@ -115,6 +133,7 @@ type captureSessions interface {
 type consentStore struct {
 	w      walker
 	audio  captureSessions        // nil: the microphone comes from the consent store
+	camera cameraStreams          // nil: the camera comes from the consent store
 	procs  processes              // nil: entries are trusted as they are
 	polled bool                   // procs refreshed during this poll
 	ignore map[string]bool        // lower-case exe or package names
@@ -126,9 +145,13 @@ type consentStore struct {
 	visitFn func(key []byte, packaged bool, start, stop uint64)
 
 	self      uint32                 // this process, never reported
-	recording []uint32               // capture session owners of this poll, reused
-	byPID     map[uint32]cachedEntry // capture session owners, by process ID
-	captureFn func(pid uint32, active bool)
+	recording []audioSession         // active capture sessions of this poll, reused
+	byPID     map[uint32]cachedEntry // capture session and camera owners, by process ID
+	captureFn func(s audioSession)
+
+	streaming []uint32 // camera streams of this poll, reused
+	relays    []App    // relay programs streaming from a camera this poll, reused
+	streamFn  func(pid uint32)
 }
 
 type cachedEntry struct {
@@ -137,6 +160,7 @@ type cachedEntry struct {
 	exe     string // lower-case executable name of a desktop app
 	path    string // full path of a desktop app ('\' separators), if known
 	browser bool   // the app is a web browser
+	relay   bool   // the app processes the camera or microphone for other apps
 }
 
 func newConsentStore(w walker, procs processes, opts Options) *consentStore {
@@ -162,6 +186,7 @@ func newConsentStore(w walker, procs processes, opts Options) *consentStore {
 	}
 	c.visitFn = c.visit
 	c.captureFn = c.addRecording
+	c.streamFn = c.addStream
 	return c
 }
 
@@ -173,19 +198,30 @@ func (c *consentStore) withAudio(a captureSessions, self uint32) *consentStore {
 	return c
 }
 
+// withCamera makes the camera come from the camera streams; the consent
+// store is the fallback when they cannot be read.
+func (c *consentStore) withCamera(cs cameraStreams, self uint32) *consentStore {
+	c.camera, c.self = cs, self
+	return c
+}
+
 func (c *consentStore) Poll(dst *Snapshot) error {
 	dst.Reset()
 	c.dst = dst
 	c.polled = false
 	micDone := c.audio != nil && c.pollAudio() == nil
+	camDone := c.camera != nil && c.pollCamera() == nil
 	for dev := Microphone; dev <= Camera; dev++ {
-		if dev == Microphone && micDone {
+		if (dev == Microphone && micDone) || (dev == Camera && camDone) {
 			continue
 		}
 		c.dev = dev
 		if err := c.w.walk(dev, c.visitFn); err != nil {
 			return err
 		}
+	}
+	if camDone {
+		c.relayedCamera()
 	}
 	// Map iteration order does not matter; the walker order does, so sort
 	// for stable results.
@@ -258,7 +294,7 @@ func (c *consentStore) describe(key string, packaged bool) cachedEntry {
 	}
 	e := cachedEntry{app: app, ignored: c.ignore[lower]}
 	if !packaged {
-		e.exe, e.browser = lower, browsers[lower]
+		e.exe, e.browser, e.relay = lower, browsers[lower], slices.Contains(builtinIgnore, lower)
 		if strings.IndexByte(key, '#') >= 0 {
 			e.path = strings.ReplaceAll(key, "#", `\`)
 		}
@@ -273,61 +309,144 @@ func (c *consentStore) pollAudio() error {
 	if err := c.audio.capture(c.captureFn); err != nil {
 		return err
 	}
-	if len(c.recording) == 0 {
+	if len(c.recording) == 0 || !c.refreshProcs() {
 		return nil
 	}
-	// Somebody records: look at the running programs, once per poll.
-	if c.procs == nil || c.procs.refresh() != nil {
-		return nil
-	}
-	c.polled = true
-	for _, pid := range c.recording {
-		exe, path, ok := c.procs.process(pid)
-		if !ok {
-			continue // exited meanwhile
+	for _, rec := range c.recording {
+		e, ok := c.entryForPID(rec.pid)
+		if !ok || e.ignored {
+			continue
 		}
-		e, cached := c.byPID[pid]
-		if !cached || e.exe != exe {
-			key := exe
-			if path != "" {
-				key = strings.ReplaceAll(path, `\`, "#") // as the consent store writes it
-			}
-			e = c.describe(key, false)
-			c.byPID[pid] = e
-		}
-		if e.ignored || containsKey(c.dst.Mic, e.app.Key) {
-			continue // a program can hold several sessions, on several devices
+		// A program can hold several sessions, on several devices: it is
+		// muted only if every one of them is.
+		if i := indexKey(c.dst.Mic, e.app.Key); i >= 0 {
+			c.dst.Mic[i].Muted = c.dst.Mic[i].Muted && rec.muted
+			continue
 		}
 		app := e.app
+		app.Muted = rec.muted
 		if e.browser {
 			app = c.webApp(app, e.exe)
 		}
 		c.dst.Mic = append(c.dst.Mic, app)
 	}
-	if len(c.byPID) > 4*len(c.recording)+16 {
-		clear(c.byPID) // drop exited processes now and then
-	}
+	c.trimPIDs(len(c.recording))
 	return nil
 }
 
-func (c *consentStore) addRecording(pid uint32, active bool) {
-	if active && pid != 0 && pid != c.self && !slices.Contains(c.recording, pid) {
-		c.recording = append(c.recording, pid)
+// pollCamera fills dst.Camera from the camera streams. Relay programs
+// (NVIDIA Broadcast) stream the camera for an app that reads their virtual
+// camera; they are kept aside for relayedCamera.
+func (c *consentStore) pollCamera() error {
+	c.streaming, c.relays = c.streaming[:0], c.relays[:0]
+	if err := c.camera.streams(c.streamFn); err != nil {
+		return err
+	}
+	if len(c.streaming) == 0 || !c.refreshProcs() {
+		return nil
+	}
+	for _, pid := range c.streaming {
+		e, ok := c.entryForPID(pid)
+		switch {
+		case !ok:
+		case e.relay:
+			if indexKey(c.relays, e.app.Key) < 0 {
+				c.relays = append(c.relays, e.app)
+			}
+		case e.ignored:
+		case indexKey(c.dst.Camera, e.app.Key) < 0:
+			app := e.app
+			if e.browser {
+				app = c.webApp(app, e.exe)
+			}
+			c.dst.Camera = append(c.dst.Camera, app)
+		}
+	}
+	c.trimPIDs(len(c.streaming))
+	return nil
+}
+
+// relayedCamera reports the camera streamed by a relay program. Windows
+// does not tell which app reads the relay's virtual camera; an app in a
+// call is the likely one, so the microphone apps are reported, or the
+// relay itself when none records.
+func (c *consentStore) relayedCamera() {
+	if len(c.relays) == 0 || len(c.dst.Camera) > 0 {
+		return
+	}
+	if len(c.dst.Mic) > 0 {
+		for _, app := range c.dst.Mic {
+			app.Muted = false
+			c.dst.Camera = append(c.dst.Camera, app)
+		}
+		return
+	}
+	c.dst.Camera = append(c.dst.Camera, c.relays...)
+}
+
+// refreshProcs looks at the running programs, once per poll.
+func (c *consentStore) refreshProcs() bool {
+	if c.procs == nil {
+		return false
+	}
+	if !c.polled {
+		c.polled = c.procs.refresh() == nil
+	}
+	return c.polled
+}
+
+// entryForPID describes a running process, cached by process ID.
+func (c *consentStore) entryForPID(pid uint32) (cachedEntry, bool) {
+	exe, path, ok := c.procs.process(pid)
+	if !ok {
+		return cachedEntry{}, false // exited meanwhile
+	}
+	e, cached := c.byPID[pid]
+	if !cached || e.exe != exe {
+		key := exe
+		if path != "" {
+			key = strings.ReplaceAll(path, `\`, "#") // as the consent store writes it
+		}
+		e = c.describe(key, false)
+		c.byPID[pid] = e
+	}
+	return e, true
+}
+
+// trimPIDs drops exited processes from byPID now and then.
+func (c *consentStore) trimPIDs(live int) {
+	if len(c.byPID) > 4*live+16 {
+		clear(c.byPID)
 	}
 }
 
-func containsKey(apps []App, key string) bool {
+func (c *consentStore) addRecording(s audioSession) {
+	if s.active && s.pid != 0 && s.pid != c.self {
+		c.recording = append(c.recording, s)
+	}
+}
+
+func (c *consentStore) addStream(pid uint32) {
+	if pid != 0 && pid != c.self && !slices.Contains(c.streaming, pid) {
+		c.streaming = append(c.streaming, pid)
+	}
+}
+
+func indexKey(apps []App, key string) int {
 	for i := range apps {
 		if apps[i].Key == key {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 func (c *consentStore) Close() error {
 	if c.audio != nil {
 		c.audio.close()
+	}
+	if c.camera != nil {
+		c.camera.close()
 	}
 	return c.w.close()
 }

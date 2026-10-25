@@ -27,8 +27,18 @@ changes per minor version.
   started during a call. The time comes from the internet (SNTP); set
   `timezone` if you are not in Italy's time zone.
 - `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
+- New status `muted` (blue): in a call with the microphone muted and the
+  webcam off. It ranks below `dnd`.
 
 ### PC app (Windows)
+
+- The webcam is detected again. Recent Windows 11 builds stopped recording
+  camera use where the app looked; the app now asks Windows' camera service
+  which programs are streaming. A webcam used through NVIDIA Broadcast's
+  virtual camera counts too, shown with the app in the call.
+- A call with the microphone muted in Windows (the sound settings, a mute
+  key, or the app muting its own recording) and the webcam off shows as
+  `muted`. `knockctl detect live` prints what detection sees every second.
 
 - The doorbell rings on every connected PC: a standard Windows notification,
   also during calls. It can be turned off in the settings.

@@ -61,6 +61,9 @@ color:
   # Status colours, shared by the LED and the display background.
   - id: color_free
     hex: 00B050
+  # In a call with the microphone muted and the camera off.
+  - id: color_muted
+    hex: 00A0E0
   - id: color_mic
     hex: FFB000
   - id: color_camera
@@ -304,6 +307,7 @@ script:
           const auto st = id(status).current_option();
           Color c = id(color_offline);
           if (st == "free") c = id(color_free);
+          else if (st == "muted") c = id(color_muted);
           else if (st == "mic") c = id(color_mic);
           else if (st == "camera") c = id(color_camera);
           else if (st == "call") c = id(color_call);

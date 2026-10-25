@@ -27,6 +27,7 @@ var builtinNames = map[string]string{
 	"signal.exe":                             "Signal",
 	"steamwebhelper.exe":                     "Steam",
 	"audacity.exe":                           "Audacity",
+	"nvidia broadcast.exe":                   "NVIDIA Broadcast",
 	"microsoft.windowscamera_8wekyb3d8bbwe":  "Camera",
 	"microsoft.windowssoundrecorder_8wekyb3d8bbwe": "Sound Recorder",
 	"microsoftwindows.client.cbs_cw5n1h2txyewy":    "Windows",
