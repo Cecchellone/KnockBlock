@@ -103,7 +103,7 @@ These three requirements drive every design decision. If a change conflicts with
 - Target board: Waveshare ESP32-C6-LCD-1.47. Use `esp32: variant: esp32c6` with `framework: type: esp-idf`.
 - **Verify before writing pins**: display (SPI pins, CS, DC, RST, backlight), LED GPIO (believed to be GPIO8), panel dimensions and offsets for the ST7789 172×320. Take them from the official Waveshare wiki/schematic and note the source URL in a YAML comment. Do not guess: a wrong pin means a black screen.
 - Entities exposed over the Native API (names in English, stable IDs):
-  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `muted`, `mic`, `camera`, `call`, `dnd`, `night`, `offline`. It shows the **combined** status of all sources (see Presence below) and updates LED colour and display label. Setting it directly (Home Assistant) reports the "manual" source.
+  - `select` **`status`** — options are **language-neutral status IDs**: `free`, `away`, `muted`, `mic`, `camera`, `call`, `dnd`, `night`, `offline`. It shows the **combined** status of all sources (see Presence below) and updates LED colour and display label. Setting it directly (Home Assistant) reports the "manual" source.
   - `select` **`display_language`** — options are language codes (`en`, `it`, …); persisted across reboots (`restore_value: true`).
   - API action **`report_presence(pc, status, app)`** — called by every PC app on change and at least every ~30 s.
   - API actions **`set_status(source, status, label, colour, app, devices, duration)`** and **`display_message(message, source, app, colour, duration)`** — for Home Assistant (`docs/home-assistant.md`); messages last 4 s + 0.2 s per character (5–30 s) unless a duration is given.
@@ -113,10 +113,10 @@ These three requirements drive every design decision. If a change conflicts with
   - `switch` **`privacy_mode`** (board) — hides app and PC names on the display.
   - `switch` **`flip_display`** (board) — rotates the picture by 180° (restored across reboots).
   - `number` **`led_brightness`** (board) — default status LED brightness in %, restored; the PC settings' Device tab shows it.
-  - Display layout (board): a slightly darker info bar at the top (PC left, app centre, clock or call minutes right; `privacy_mode` hides PC and app) and the localized label below. The clock comes from SNTP (`timezone` substitution).
+  - Display layout (board): a slightly darker info bar at the top (PC left, app centre, clock or the call duration in a bold red pill right; `privacy_mode` hides PC and app), the localized label, and phone/mic/camera icons at the bottom; `offline` and `away` show a black resting screen with a small dot. The clock comes from SNTP (`timezone` substitution).
   - `event` **`doorbell`** (type `ring`), `button` **`ring_doorbell`** — the doorbell. The board's BOOT button (GPIO9, `doorbell_pin` substitution) rings it too; rings within 3 s count once. PC apps subscribe to states and show a standard Windows notification.
   - Optional: `light` for the RGB LED so Home Assistant can use it directly; `number` for display brightness.
-- **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `night` > `dnd` > `muted` > `free`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
+- **Presence and watchdog** (`docs/presence.md`): several PCs may drive the light at once. Each source (a PC, or the manual source) expires after ~2 minutes without a report, so the light cannot stay on "call" after a PC shuts down. The strongest live status wins (`call` > `camera` > `mic` > `night` > `dnd` > `muted` > `free` > `away`); with no live source the status is `offline`. Do not rely on `api.connected`, because Home Assistant counts as a client too.
 - `api:` with `encryption: key: !secret api_encryption_key` and **`reboot_timeout: 0s`** (otherwise the device reboots in a loop when neither the PC nor Home Assistant is connected).
 - `ota:` and `logger:` enabled; no `web_server`.
 - Fonts: the display font **must include accented glyphs** used by supported languages (at least `àèéìòù ÀÈÉÌÒÙ`). When a language is added, extend the glyph set.
@@ -142,7 +142,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 5.2 Detection
 
-- Microphone: the active capture sessions of the Windows audio sessions (WASAPI, Core Audio COM by vtable, no CGO). Fallback when they cannot be read: the consent store. Muted when Windows mutes the session or device, or, for Discord (which keeps recording while muted), when its own mute or deafen button is on, read through Discord's local RPC when the Integrations tab enables it (`internal/discord`, `docs/discord.md`).
+- Microphone: the active capture sessions of the Windows audio sessions (WASAPI, Core Audio COM by vtable, no CGO). Fallback when they cannot be read: the consent store. Muted when Windows mutes the session or device, or, for Discord and Teams (which keep recording while muted), when their own mute button is on, read through Discord's local RPC or Teams' third-party API when the Integrations tab enables them (`internal/discord`, `internal/teams`, `docs/discord.md`, `docs/teams.md`).
 - Camera (and the microphone fallback): `HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{microphone,webcam}`, including the `NonPackaged` subkey (desktop apps; executable path encoded with `#` instead of `\`). An app is "in use" when `LastUsedTimeStop == 0` and `LastUsedTimeStart != 0` and its program, by full path, still runs (stale entries of crashed apps and old versions). Findings in `docs/detection-notes.md`.
 - Poll every 1–2 s (simple and cheap). Event-based `RegNotifyChangeKeyValue` is an optional later optimization.
 - User-configurable **ignore list** by executable name (e.g. apps that keep the mic open outside calls).
@@ -151,7 +151,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 
 ### 5.3 Status logic
 
-- `mic && camera` → `call`; `camera` only → `camera`; `mic` only → `mic`; none → `free`.
+- `mic && camera` → `call`; `camera` only → `camera`; `mic` only → `mic`; mic open but muted → `muted`; none → `free`, or `away` while the PC is locked or idle for 10 minutes (`internal/idle`, setting in This PC).
 - Manual override from the tray menu (`dnd`, `free`, auto) takes priority until cleared.
 - Send `report_presence(pc, status, app)` on change and every ~30 s; `pc` defaults to the Windows computer name (configurable). Send `offline` on exit. A setting can omit app names.
 - On resume from sleep / network change: force reconnect and resend status immediately.
@@ -162,7 +162,7 @@ Design rules: context-aware APIs, one goroutine reading, writes serialized, no g
 - Menu: current status, override options, "Open settings", "Start with Windows" toggle, "Quit".
 - Notifications: only for things that matter (device unreachable for several minutes, doorbell, update), always the standard Windows notification and Windows' own sound, never a custom one. A setting picks the mode: none, text only (default), sound only, text and sound. When it shows on screen, the doorbell notification is a WinRT toast with a reply box (`internal/tray/toast_windows.go`); the reply is shown on the light for 5–30 s depending on its length (`show_message`).
 - Double-clicking the tray icon opens the settings; a single click opens the menu.
-- Settings window (native, in tabs, in this order): This PC (name, language, app names, doorbell, notification mode, autostart), KnockBlock (the light's own settings, read live and written to the device: display language, orientation, display and LED brightness as sliders shown on the light while dragged and saved when let go, privacy), Integrations (Discord's mute button, `docs/discord.md`), Apps (ignore list, app names), Connection (host, default `knockblock.local`, port, encryption key, connection test). It opens by itself on first start, on the Connection tab. There is no Save or Cancel: every change is saved at once (a text field when it loses the focus; closing the window saves what is being typed). Saving reconnects only when the address or key changes.
+- Settings window (native, in tabs, in this order): This PC (name, language, app names, doorbell, notification mode, autostart), KnockBlock (the light's own settings, read live and written to the device: display language, orientation, display and LED brightness as sliders shown on the light while dragged and saved when let go, privacy), Integrations (Discord's and Teams' mute buttons, `docs/discord.md`, `docs/teams.md`), Apps (ignore list, app names), Connection (host, default `knockblock.local`, port, encryption key, connection test). It opens by itself on first start, on the Connection tab. There is no Save or Cancel: every change is saved at once (a text field when it loses the focus; closing the window saves what is being typed). Saving reconnects only when the address or key changes.
 
 ### 5.5 Config and secrets
 
