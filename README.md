@@ -21,12 +21,12 @@ From then on, the light follows your microphone and webcam. Several PCs can driv
 | Status   | Meaning                          |
 |----------|----------------------------------|
 | `free`   | Come in                          |
+| `away`   | Not at the PC (locked or idle); the screen rests: black with a small dot |
 | `muted`  | In a call, microphone muted and webcam off |
 | `mic`    | Microphone is on                 |
 | `camera` | Webcam is on                     |
 | `call`   | In a call — please don't knock   |
 | `dnd`    | Do not disturb (manual)          |
-| `night`  | Sleeping (Night mode switch, e.g. from Home Assistant) |
 | `offline`| The PC is off or unreachable     |
 
 ## Goals
@@ -97,7 +97,7 @@ Options: `-pc NAME` (default: the computer name), `-ignore app.exe,…`, `-no-ap
 ### Display, doorbell and orientation
 
 - The display shows the status in large letters and, in a darker bar at the top, the PC (left), the app (middle) and the time (right), or how many minutes the call has lasted. **Privacy mode** hides the PC and the app. The time comes from the internet (SNTP): if you are not in the `Europe/Rome` time zone, set `timezone` in your device config's `substitutions:` (e.g. `timezone: Europe/London`).
-- **LED brightness** (Home Assistant, or the PC settings' Device tab) sets how bright the status LED is.
+- **LED brightness** (Home Assistant, or the PC settings' Device tab) sets how bright the status LED is; 0 % turns it off for good.
 
 - The doorbell is the board's **BOOT** button. To use an external push button instead, wire it between a free GPIO and GND and set `doorbell_pin` in your device config's `substitutions:` (e.g. `doorbell_pin: GPIO4`). Home Assistant sees a `Doorbell` event (device class `doorbell`) and a `Ring doorbell` button.
 - If the light hangs the other way round, turn on the **Flip display** switch (Home Assistant), or choose "Upside down" in the PC app's settings. The device remembers it.

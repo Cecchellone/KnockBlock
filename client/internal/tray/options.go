@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/Cecchellone/KnockBlock/client/internal/discord"
+	"github.com/Cecchellone/KnockBlock/client/internal/teams"
 )
 
 // Options configures the tray app.
@@ -17,4 +18,7 @@ type Options struct {
 	// Discord follows Discord's mute button when the settings turn it on;
 	// nil leaves it out.
 	Discord *discord.Client
+	// Teams follows the Teams mute button when the settings turn it on;
+	// nil leaves it out.
+	Teams *teams.Client
 }

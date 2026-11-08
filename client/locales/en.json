@@ -92,5 +92,16 @@
   "discord.consent": "Allow KnockBlock in the window Discord is showing.",
   "discord.denied": "Not allowed in Discord. Turn it off and on again to be asked again.",
   "discord.connected": "Connected: the light follows your mute and deafen buttons.",
-  "discord.failed": "Could not connect to Discord; trying again."
+  "discord.failed": "Could not connect to Discord; trying again.",
+  "status.away": "Away",
+  "settings.away": "Show \"Away\" on the light when this PC is locked or unused for 10 minutes",
+  "notify.quick_come_in": "Come in",
+  "notify.quick_minutes": "5 minutes",
+  "notify.quick_not_now": "Not now",
+  "settings.teams": "Microsoft Teams: show my mute button on the light",
+  "settings.teams_help": "Turn on the API in Teams once: Settings → Privacy → Manage API → Enable API. In your next meeting, Teams asks you to allow KnockBlock.",
+  "teams.off": "Off.",
+  "teams.not_running": "Waiting for Teams (start it and turn on its API).",
+  "teams.pairing": "Join a meeting and allow KnockBlock when Teams asks.",
+  "teams.connected": "Connected: the light follows your mute button in meetings."
 }

@@ -47,6 +47,9 @@ type App struct {
 type Snapshot struct {
 	Mic    []App
 	Camera []App
+	// Away is true while nobody uses this PC (locked, or no input for a
+	// while); set by the agent, not by the detector.
+	Away bool
 }
 
 // Reset empties the snapshot, keeping its capacity.

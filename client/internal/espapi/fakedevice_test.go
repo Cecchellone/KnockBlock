@@ -172,7 +172,7 @@ func (d *fakeDevice) handle(msg proto.Message) bool {
 		d.send(&pb.ListEntitiesEventResponse{ObjectId: "doorbell", Key: keyDoorbell, Name: "Doorbell", EventTypes: []string{"ring"}})
 		d.send(&pb.ListEntitiesButtonResponse{ObjectId: "ring_doorbell", Key: keyRing, Name: "Ring doorbell"})
 		d.send(&pb.ListEntitiesLightResponse{ObjectId: "display_backlight", Key: keyBacklight, Name: "Display backlight"})
-		d.send(&pb.ListEntitiesNumberResponse{ObjectId: "led_brightness", Key: keyLED, Name: "LED brightness", MinValue: 5, MaxValue: 100, Step: 5})
+		d.send(&pb.ListEntitiesNumberResponse{ObjectId: "led_brightness", Key: keyLED, Name: "LED brightness", MinValue: 0, MaxValue: 100, Step: 5})
 		d.send(&pb.ListEntitiesSensorResponse{ObjectId: "other", Key: 999, Name: "Other"}) // not handled
 		d.send(&pb.ListEntitiesDoneResponse{})
 	case *pb.SubscribeStatesRequest:

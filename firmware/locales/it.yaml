@@ -1,10 +1,10 @@
 # Italian display labels. Keys are status IDs; values are shown on the device
 # display. A missing key falls back to English.
 free: Libero
+away: Non al PC
 muted: In chiamata, muto
 mic: Microfono acceso
 camera: Webcam accesa
 call: In chiamata
 dnd: Non disturbare
-night: Sto dormendo
 offline: Non connesso

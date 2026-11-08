@@ -30,6 +30,9 @@ type Config struct {
 	PollInterval time.Duration
 	Detector     detect.Detector
 	Link         Link
+	// Away reports whether nobody uses this PC (locked or idle); nil:
+	// never.
+	Away func() bool
 	// OnResult is called, from Run's goroutine, whenever the computed
 	// result changes. It must not block.
 	OnResult func(status.Result)
@@ -137,6 +140,7 @@ func (a *Agent) Run(ctx context.Context) {
 			failing = false
 		}
 
+		snap.Away = a.cfg.Away != nil && a.cfg.Away()
 		a.mu.Lock()
 		res := status.Compute(&snap, a.override, a.cfg.SendApps)
 		changed := res != a.current

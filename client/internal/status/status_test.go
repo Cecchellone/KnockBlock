@@ -49,6 +49,20 @@ func TestCompute(t *testing.T) {
 	}
 }
 
+func TestAway(t *testing.T) {
+	away := &detect.Snapshot{Away: true}
+	if got := Compute(away, Auto, true).Status; got != Away {
+		t.Errorf("idle PC = %s, want away", got)
+	}
+	inCall := &detect.Snapshot{Away: true, Mic: []detect.App{discord}}
+	if got := Compute(inCall, Auto, true).Status; got != Mic {
+		t.Errorf("idle PC in a call = %s, want mic", got)
+	}
+	if got := Compute(away, ForceFree, true).Status; got != Free {
+		t.Errorf("override free = %s", got)
+	}
+}
+
 func TestDevices(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -18,6 +18,16 @@ changes per minor version.
 
 ### Light (firmware)
 
+- During a call the duration in the info bar is bold, in a red pill (white
+  on a red screen), so it is not mistaken for the clock.
+- Resting screen: with no PC connected, or with every PC away, the display
+  is black with only a small dot, so it does not light up the hallway.
+- New status `away` (a PC that is locked or idle), the weakest after
+  `offline`.
+- `LED brightness` goes down to 0 %, which keeps the status LED off for
+  good (the doorbell does not blink it either).
+- Removed `Night mode` and the `night` status.
+
 - Doorbell: the board's BOOT button (or any GPIO, `doorbell_pin`) and the
   `Ring doorbell` button fire a `doorbell` event. The display shows a bell
   and the LED blinks white. Rings closer than 3 s count as one.
@@ -26,11 +36,9 @@ changes per minor version.
   in the middle and the time on the right, or the minutes since the call
   started during a call. The time comes from the internet (SNTP); set
   `timezone` if you are not in Italy's time zone.
-- `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
+- `LED brightness` setting (kept across reboots) for the status LED.
 - New status `muted` (blue): in a call with the microphone muted and the
   webcam off. It ranks below `dnd`.
-- `Night mode` switch: the light says "Sleeping" on a dark blue, dimmed,
-  until turned off; status `night`, above `dnd`, below a PC in a call.
 - `Phone call` switch for Home Assistant automations (e.g. the Android
   companion app's phone state): "In a call" with the phone icon and the
   duration; it turns itself off after 4 hours. Examples in
@@ -50,6 +58,14 @@ changes per minor version.
   shows them to Home Assistant.
 
 ### PC app (Windows)
+
+- The doorbell notification has quick replies: "Come in", "5 minutes",
+  "Not now".
+- Microsoft Teams' mute button can drive the light, like Discord's: tick
+  it in the Integrations tab after turning on Teams' third-party API
+  (docs/teams.md).
+- "Away": the PC reports `away` while it is locked or unused for 10
+  minutes (setting in This PC, on by default).
 
 - The doorbell notification has a reply box when it shows on screen
   (notification mode "text" or "text and sound"): type an answer, press

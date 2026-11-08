@@ -5,10 +5,10 @@
 //
 //	knockctl [flags] list               list entities
 //	knockctl [flags] watch              print state changes until Ctrl-C
-//	knockctl [flags] status <id>        set the status (free, muted, mic, camera, call, dnd, night, offline)
+//	knockctl [flags] status <id>        set the status (free, muted, mic, camera, call, dnd, away, offline)
 //	knockctl [flags] lang <code>        set the display language (en, it, ...)
 //	knockctl [flags] heartbeat          press the heartbeat button
-//	knockctl [flags] switch <id> on|off turn a switch on or off (night_mode, phone_call, ...)
+//	knockctl [flags] switch <id> on|off turn a switch on or off (phone_call, privacy_mode, ...)
 //	knockctl [flags] action <name> [arg=value ...]
 //	                                    call an action (set_status, display_message, ...)
 //	knockctl [flags] report <pc> <status> [app]
@@ -187,7 +187,7 @@ func run() error {
 		return conn.ExecuteAction(cmdCtx, e, values)
 	case "switch":
 		if len(args) != 3 || (args[2] != "on" && args[2] != "off") {
-			return errors.New("usage: knockctl switch <id> on|off (e.g. night_mode, phone_call)")
+			return errors.New("usage: knockctl switch <id> on|off (e.g. phone_call, privacy_mode)")
 		}
 		e, ok := ents.Find(espapi.KindSwitch, args[1])
 		if !ok {

@@ -15,7 +15,7 @@ func TestReplyToastManual(t *testing.T) {
 		t.Skip("set KNOCKBLOCK_TOAST_TEST=1 to show a real toast")
 	}
 	got := make(chan string, 1)
-	err := showReplyToast(replyToast{Title: "Doorbell", Body: "Someone is at your door.", Placeholder: "Reply on the light", Send: "Send"},
+	err := showReplyToast(replyToast{Title: "Doorbell", Body: "Someone is at your door.", Placeholder: "Reply on the light", Send: "Send", Quick: []string{"Come in", "5 minutes", "Not now"}},
 		func(s string) { got <- s })
 	if err != nil {
 		t.Fatal(err)
