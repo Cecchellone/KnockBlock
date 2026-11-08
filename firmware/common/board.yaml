@@ -75,9 +75,6 @@ color:
   # Away from the PC (locked or idle): shown on the resting screen.
   - id: color_away
     hex: 607080
-  # Night mode: a dark blue, with dimmed text and LED.
-  - id: color_night
-    hex: 0A1440
   - id: color_offline
     hex: 303030
 
@@ -172,9 +169,7 @@ display:
       const Color bg = id(current_color);
       // Black text on light backgrounds, white otherwise.
       const int luma = (299 * bg.r + 587 * bg.g + 114 * bg.b) / 1000;
-      // Night mode dims the text too.
-      const bool night = id(status).current_option() == "night";
-      const Color fg = night ? Color(110, 120, 160) : luma > 150 ? Color::BLACK : Color::WHITE;
+      const Color fg = luma > 150 ? Color::BLACK : Color::WHITE;
       it.fill(bg);
 
       if (id(doorbell_shown)) {
@@ -379,7 +374,8 @@ number:
     icon: mdi:brightness-percent
     entity_category: config
     unit_of_measurement: "%"
-    min_value: 5
+    # 0 % turns the LED off for good (the doorbell does not blink it either).
+    min_value: 0
     max_value: 100
     step: 5
     initial_value: 60
@@ -476,7 +472,6 @@ script:
           else if (st == "camera") c = id(color_camera);
           else if (st == "call") c = id(color_call);
           else if (st == "dnd") c = id(color_dnd);
-          else if (st == "night") c = id(color_night);
           else if (st == "away") c = id(color_away);
           // A custom colour (set_status) replaces the status colour.
           if (custom != knockblock_presence::Presence::NO_COLOR)
@@ -484,17 +479,19 @@ script:
           id(current_color) = c;
       - if:
           condition:
-            lambda: 'return id(status).current_option() == "offline";'
+            # Offline, or LED brightness at 0 %: the LED stays off.
+            lambda: |-
+              return id(status).current_option() == "offline" ||
+                     id(led_brightness).state <= 0;
           then:
             - light.turn_off: status_led
           else:
             - light.turn_on:
                 id: status_led
-                # Night mode and away keep the LED faint.
+                # Away keeps the LED faint.
                 brightness: !lambda |-
                   const float b = id(led_brightness).state / 100.0f;
-                  const auto &st = id(status).current_option();
-                  return st == "night" || st == "away" ? std::min(b, 0.1f) : b;
+                  return id(status).current_option() == "away" ? std::min(b, 0.1f) : b;
                 red: !lambda 'return id(current_color).r / 255.0f;'
                 green: !lambda 'return id(current_color).g / 255.0f;'
                 blue: !lambda 'return id(current_color).b / 255.0f;'
@@ -507,21 +504,25 @@ script:
     then:
       - lambda: id(doorbell_shown) = true;
       - component.update: main_display
-      - repeat:
-          count: 3
+      - if:
+          condition:
+            lambda: 'return id(led_brightness).state > 0;'
           then:
-            - light.turn_on:
-                id: status_led
-                brightness: 100%
-                red: 1.0
-                green: 1.0
-                blue: 1.0
-                transition_length: 0s
-            - delay: 250ms
-            - light.turn_off:
-                id: status_led
-                transition_length: 0s
-            - delay: 250ms
+            - repeat:
+                count: 3
+                then:
+                  - light.turn_on:
+                      id: status_led
+                      brightness: 100%
+                      red: 1.0
+                      green: 1.0
+                      blue: 1.0
+                      transition_length: 0s
+                  - delay: 250ms
+                  - light.turn_off:
+                      id: status_led
+                      transition_length: 0s
+                  - delay: 250ms
       - delay: 3500ms
       - lambda: id(doorbell_shown) = false;
       - script.execute: apply_status

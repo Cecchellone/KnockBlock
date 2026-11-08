@@ -4,15 +4,14 @@ Home Assistant is optional: the light works with the PC app alone. When
 Home Assistant is there, it finds the light (ESPHome integration) and sees
 the same entities as the PC app; it can also drive the light.
 
-## Night mode and phone calls
+## Phone calls
 
-Two switches let automations put the light in a state no PC knows about.
-Both act like one more PC: the strongest status of all wins
+The `Phone call` switch lets an automation put the light in a call no PC
+knows about. It acts like one more PC: the strongest status of all wins
 (`docs/presence.md`).
 
 | Switch | Status shown | Notes |
 |--------|--------------|-------|
-| `Night mode` | `night`: "Sleeping", dark blue, dimmed text and LED | kept across reboots; ranks above `dnd`, below a PC that records or films |
 | `Phone call` | `call`: "In a call", phone icon and call duration | not kept across reboots; turns itself off after 4 h (`phone_call_max`) if no automation does |
 
 The entity IDs below assume the device is named `knockblock`.
@@ -38,27 +37,6 @@ actions:
 mode: queued
 ```
 
-### Night mode on a schedule
-
-```yaml
-alias: KnockBlock – night mode
-triggers:
-  - trigger: time
-    at: "23:30:00"
-    id: "on"
-  - trigger: time
-    at: "08:00:00"
-    id: "off"
-actions:
-  - action: switch.turn_{{ trigger.id }}
-    target:
-      entity_id: switch.knockblock_night_mode
-mode: single
-```
-
-Other ideas: turn night mode on when the bedroom lights go off, or with a
-"Good night" scene.
-
 ## Actions: any status, any message
 
 Two actions show up in Home Assistant as `esphome.knockblock_set_status` and
@@ -73,7 +51,7 @@ A status like one more PC.
 | Field | Meaning |
 |-------|---------|
 | `source` | who sets it; shown on the left of the info bar (`~something` shows nothing). Calling again with the same source replaces it |
-| `status` | a status ID: `free`, `muted`, `mic`, `camera`, `call`, `dnd`, `night`; it decides the rank against the PCs and the icons. `offline` removes the source |
+| `status` | a status ID: `free`, `muted`, `mic`, `camera`, `call`, `dnd`, `away`; it decides the rank against the PCs and the icons. `offline` removes the source |
 | `label` | text on the display instead of the usual label (empty: the usual one) |
 | `colour` | display and LED colour (empty: the status colour) |
 | `app` | shown in the centre of the info bar |

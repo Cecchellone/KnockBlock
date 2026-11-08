@@ -24,6 +24,9 @@ changes per minor version.
   is black with only a small dot, so it does not light up the hallway.
 - New status `away` (a PC that is locked or idle), the weakest after
   `offline`.
+- `LED brightness` goes down to 0 %, which keeps the status LED off for
+  good (the doorbell does not blink it either).
+- Removed `Night mode` and the `night` status.
 
 - Doorbell: the board's BOOT button (or any GPIO, `doorbell_pin`) and the
   `Ring doorbell` button fire a `doorbell` event. The display shows a bell
@@ -33,11 +36,9 @@ changes per minor version.
   in the middle and the time on the right, or the minutes since the call
   started during a call. The time comes from the internet (SNTP); set
   `timezone` if you are not in Italy's time zone.
-- `LED brightness` setting (5–100 %, kept across reboots) for the status LED.
+- `LED brightness` setting (kept across reboots) for the status LED.
 - New status `muted` (blue): in a call with the microphone muted and the
   webcam off. It ranks below `dnd`.
-- `Night mode` switch: the light says "Sleeping" on a dark blue, dimmed,
-  until turned off; status `night`, above `dnd`, below a PC in a call.
 - `Phone call` switch for Home Assistant automations (e.g. the Android
   companion app's phone state): "In a call" with the phone icon and the
   duration; it turns itself off after 4 hours. Examples in

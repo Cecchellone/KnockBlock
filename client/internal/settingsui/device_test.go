@@ -130,11 +130,14 @@ func TestSliders(t *testing.T) {
 	if lo, hi, step := SliderRange(SliderBacklight); lo != 0 || hi != 100 || step != 5 {
 		t.Errorf("backlight range %d..%d/%d", lo, hi, step)
 	}
-	if lo, _, _ := SliderRange(SliderLED); lo != 5 {
-		t.Errorf("LED minimum %d, want the firmware's 5", lo)
+	if lo, _, _ := SliderRange(SliderLED); lo != 0 {
+		t.Errorf("LED minimum %d, want 0", lo)
 	}
 	if got := m.SliderLabel(SliderBacklight, 0); got != "Spento" {
 		t.Errorf("backlight 0 = %q", got)
+	}
+	if got := m.SliderLabel(SliderLED, 0); got != "Spento" {
+		t.Errorf("LED 0 = %q", got)
 	}
 	if got := m.SliderLabel(SliderLED, 35); got != "35 %" {
 		t.Errorf("LED 35 = %q", got)
@@ -142,7 +145,7 @@ func TestSliders(t *testing.T) {
 	for _, tt := range []struct {
 		sl      Slider
 		in, out int
-	}{{SliderBacklight, 37, 35}, {SliderBacklight, 38, 40}, {SliderBacklight, -3, 0}, {SliderLED, 0, 5}, {SliderLED, 120, 100}} {
+	}{{SliderBacklight, 37, 35}, {SliderBacklight, 38, 40}, {SliderBacklight, -3, 0}, {SliderLED, -2, 0}, {SliderLED, 120, 100}} {
 		if got := snap(tt.sl, tt.in); got != tt.out {
 			t.Errorf("snap(%d, %d) = %d, want %d", tt.sl, tt.in, got, tt.out)
 		}

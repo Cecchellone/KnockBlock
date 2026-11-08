@@ -380,10 +380,8 @@ func (m *Model) DisplayLanguages(codes []string) []Choice {
 
 // SliderRange returns a slider's limits and step, in percent.
 func SliderRange(sl Slider) (lo, hi, step int) {
-	if sl == SliderBacklight {
-		return 0, 100, 5
-	}
-	return 5, 100, 5 // the firmware's led_brightness minimum
+	// Both go down to 0 %: an LED at 0 % stays off for good.
+	return 0, 100, 5
 }
 
 // snap rounds a value to the slider's steps and limits.
@@ -396,7 +394,7 @@ func snap(sl Slider, v int) int {
 // SliderLabel is the text next to a slider: "35 %", or "Off" for a display
 // brightness of 0.
 func (m *Model) SliderLabel(sl Slider, value int) string {
-	if sl == SliderBacklight && value <= 0 {
+	if value <= 0 {
 		return m.T("settings.off")
 	}
 	return strconv.Itoa(value) + " %"
